@@ -262,6 +262,15 @@ export class NodeSocket implements ISocket {
 			this.socket.on('error', finished);
 			this.socket.on('timeout', finished);
 			this.socket.on('drain', finished);
+			// 'drain' follows only a write that went over the high-water mark. A
+			// smaller write still in flight ends with its callback, and writes
+			// complete in order, so an empty write's callback is the moment
+			// everything written before it has gone. Without it, a handshake
+			// reply still in flight when the extension host connection drained
+			// held the reconnection until the client gave up on it.
+			if (!this.socket.writableEnded && !this.socket.destroyed) {
+				this.socket.write(Buffer.alloc(0), finished);
+			}
 		});
 	}
 }

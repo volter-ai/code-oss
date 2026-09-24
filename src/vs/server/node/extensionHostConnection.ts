@@ -218,8 +218,14 @@ export class ExtensionHostConnection extends Disposable {
 		}
 		const connectionData = new ConnectionData(_socket, initialDataChunk);
 
-		if (!this._extensionHostProcess) {
-			// The extension host didn't even start up yet
+		if (!this._extensionHostProcess || this._connectionData) {
+			// The extension host didn't start up yet, or has not said
+			// VSCODE_EXTHOST_IPC_READY: the connection it takes at READY is this
+			// one. Sent now, it reached a host with no socket listener, and at
+			// READY the host got the connection the client had already given up
+			// on, so a host that took longer than the client's 20 s protocol
+			// timeout to start never recovered.
+			this._connectionData?.socket.end();
 			this._connectionData = connectionData;
 			return;
 		}
