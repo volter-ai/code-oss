@@ -9,7 +9,7 @@ import { getActiveWindow } from '../../../../base/browser/dom.js';
 import { IndexedDB } from '../../../../base/browser/indexedDB.js';
 import { DeferredPromise, Promises } from '../../../../base/common/async.js';
 import { toErrorMessage } from '../../../../base/common/errorMessage.js';
-import { Emitter } from '../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
 import { InMemoryStorageDatabase, isStorageItemsChangeEvent, IStorage, IStorageDatabase, IStorageItemsChangeEvent, IUpdateRequest, Storage } from '../../../../base/parts/storage/common/storage.js';
@@ -59,6 +59,7 @@ export class BrowserStorageService extends AbstractStorageService {
 		private readonly workspace: IAnyWorkspaceIdentifier,
 		private readonly userDataProfileService: IUserDataProfileService,
 		@ILogService private readonly logService: ILogService,
+		private readonly workspaceStorageUrl?: string,
 	) {
 		super({ flushInterval: BrowserStorageService.BROWSER_DEFAULT_FLUSH_INTERVAL });
 
@@ -146,7 +147,9 @@ export class BrowserStorageService extends AbstractStorageService {
 	}
 
 	private async createWorkspaceStorage(): Promise<void> {
-		const workspaceStorageIndexedDB = await IndexedDBStorageDatabase.createWorkspaceStorage(this.workspace.id, this.logService);
+		const workspaceStorageIndexedDB = this.workspaceStorageUrl
+			? await HttpStorageDatabase.create(this.workspaceStorageUrl, this.logService)
+			: await IndexedDBStorageDatabase.createWorkspaceStorage(this.workspace.id, this.logService);
 
 		this.workspaceStorageDatabase = this._register(workspaceStorageIndexedDB);
 		this.workspaceStorage = this._register(new Storage(this.workspaceStorageDatabase));
@@ -331,6 +334,110 @@ class InMemoryIndexedDBStorageDatabase extends InMemoryStorageDatabase implement
 
 	dispose(): void {
 		// No-op
+	}
+}
+
+/**
+ * Storage items kept at a URL the embedder serves (`IWorkbenchConstructionOptions.workspaceStorageUrl`).
+ * The items are read once; every change is applied in memory and written through, and closing
+ * waits for the last write.
+ */
+class HttpStorageDatabase extends Disposable implements IIndexedDBStorageDatabase {
+
+	static async create(url: string, logService: ILogService): Promise<IIndexedDBStorageDatabase> {
+		const items = new Map<string, string>();
+		try {
+			const response = await fetch(url, { credentials: 'same-origin' });
+			if (response.ok) {
+				const body = await response.json() as { items?: Record<string, unknown> };
+				for (const [key, value] of Object.entries(body.items ?? {})) {
+					if (typeof value === 'string') {
+						items.set(key, value);
+					}
+				}
+			} else {
+				logService.error(`[storage] ${url} answered ${response.status}; the workspace storage starts empty.`);
+			}
+		} catch (error) {
+			logService.error(`[storage] ${url} could not be read; the workspace storage starts empty.`, toErrorMessage(error));
+		}
+		return new HttpStorageDatabase(url, items, logService);
+	}
+
+	readonly onDidChangeItemsExternal = Event.None;
+
+	private pending: Promise<void> = Promise.resolve();
+	private pendingCount = 0;
+
+	get hasPendingUpdate(): boolean { return this.pendingCount > 0; }
+
+	private constructor(readonly name: string, private readonly items: Map<string, string>, private readonly logService: ILogService) {
+		super();
+	}
+
+	async getItems(): Promise<Map<string, string>> {
+		return new Map(this.items);
+	}
+
+	async getValue(key: string): Promise<string | undefined> {
+		return this.items.get(key);
+	}
+
+	async compareAndSwap(key: string, expectedValue: string | undefined, newValue: string): Promise<{ readonly swapped: boolean; readonly currentValue: string | undefined }> {
+		const currentValue = this.items.get(key);
+		if (currentValue !== expectedValue) {
+			return { swapped: false, currentValue };
+		}
+		await this.updateItems({ insert: new Map([[key, newValue]]) });
+		return { swapped: true, currentValue: newValue };
+	}
+
+	updateItems(request: IUpdateRequest): Promise<void> {
+		const insert: Record<string, string> = {};
+		const remove: string[] = [];
+		for (const [key, value] of request.insert ?? []) {
+			this.items.set(key, value);
+			insert[key] = value;
+		}
+		for (const key of request.delete ?? []) {
+			this.items.delete(key);
+			remove.push(key);
+		}
+		if (remove.length === 0 && Object.keys(insert).length === 0) {
+			return this.pending;
+		}
+		this.pendingCount++;
+		// Writes are ordered: each one waits for the one before it.
+		this.pending = this.pending.then(async () => {
+			try {
+				const response = await fetch(this.name, {
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ insert, delete: remove }),
+					// A write started while the page unloads still reaches the server.
+					keepalive: true,
+				});
+				if (!response.ok) {
+					this.logService.error(`[storage] ${this.name} refused a write (${response.status}).`);
+				}
+			} catch (error) {
+				this.logService.error(`[storage] ${this.name} could not be written.`, toErrorMessage(error));
+			} finally {
+				this.pendingCount--;
+			}
+		});
+		return this.pending;
+	}
+
+	async optimize(): Promise<void> { }
+
+	async close(): Promise<void> {
+		await this.pending;
+	}
+
+	async clear(): Promise<void> {
+		await this.updateItems({ delete: new Set(this.items.keys()) });
 	}
 }
 

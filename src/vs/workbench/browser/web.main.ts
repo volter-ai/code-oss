@@ -601,7 +601,7 @@ export class BrowserMain extends Disposable {
 	}
 
 	protected async createStorageService(workspace: IAnyWorkspaceIdentifier, logService: ILogService, userDataProfileService: IUserDataProfileService): Promise<IStorageService> {
-		const storageService = new BrowserStorageService(workspace, userDataProfileService, logService);
+		const storageService = new BrowserStorageService(workspace, userDataProfileService, logService, this.configuration.workspaceStorageUrl);
 
 		try {
 			await storageService.initialize();

@@ -246,6 +246,16 @@ export interface IWorkbenchConstructionOptions {
 	readonly secretStorageProvider?: ISecretStorageProvider;
 
 	/**
+	 * Where the workspace-scoped storage lives when it is not the browser's IndexedDB: a URL the
+	 * storage service reads its items from (`GET` answers `{ "items": { key: value } }`) and
+	 * writes its changes to (`POST { "insert": { key: value }, "delete": [key] }`). An embedder
+	 * that keeps a workspace's state beside the workspace itself sets it, so the state survives a
+	 * folder rename, another browser and another machine, which IndexedDB keyed by the
+	 * workspace's identifier does not.
+	 */
+	readonly workspaceStorageUrl?: string;
+
+	/**
 	 * Additional builtin extensions those cannot be uninstalled but only be disabled.
 	 * It can be one of the following:
 	 * 	- an extension in the Marketplace
