@@ -725,7 +725,12 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 			if (handle !== undefined) {
 				this.notifyOptionsChange(handle, sessionResource, updates);
 			} else {
-				this._logService.warn(`[MainThreadChatSessions] Cannot notify option change for sessionType '${sessionType}': no provider registered. Registered types: [${Array.from(this._sessionTypeToHandle.keys()).join(', ')}]`);
+				// Every extension host has its own MainThreadChatSessions, and all of them hear every
+				// session's option changes. A session exists only once SOME host's provider made it,
+				// so a type with no handle here belongs to another host (the web worker host hears
+				// the remote host's sessions): that is normal, not a fault, and warning about it put
+				// a false warning in every workbench whose chat provider runs in the remote host.
+				this._logService.trace(`[MainThreadChatSessions] option change for sessionType '${sessionType}' is not this extension host's; registered here: [${Array.from(this._sessionTypeToHandle.keys()).join(', ')}]`);
 			}
 		}));
 
