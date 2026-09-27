@@ -712,7 +712,7 @@
 				"OTHER DEALINGS IN THE FONT SOFTWARE."
 			],
 			"license": "SIL Open Font License 1.1",
-			"_vgaiNote": "src/vs/workbench/contrib/vgaiProduct/browser/media/Inter.woff2 — the variable UI face the Blender look loads through an @font-face. The file is not in this repository: it is the model editor's, at packages/model-editor/workbench/src/media/Inter.woff2 in vgai-engine, and scripts/workbench/overlay.mjs copies it to the path above when a workbench is built. This entry and its ThirdPartyNotices.txt notice stay here because they describe what a BUILT workbench contains. The binary was vendored without recording its upstream release, so the version above names what can be verified about it (its sha256) rather than a release tag."
+			"_volterNote": "src/vs/workbench/contrib/volterProduct/browser/media/Inter.woff2 — the variable UI face the Blender look loads through an @font-face. The file is not in this repository: it is the model editor's, at packages/model-editor/workbench/src/media/Inter.woff2 in volter-ai/editor, and scripts/workbench/overlay.mjs copies it to the path above when a workbench is built. This entry and its ThirdPartyNotices.txt notice stay here because they describe what a BUILT workbench contains. The binary was vendored without recording its upstream release, so the version above names what can be verified about it (its sha256) rather than a release tag."
 		},
 		{
 			"component": {

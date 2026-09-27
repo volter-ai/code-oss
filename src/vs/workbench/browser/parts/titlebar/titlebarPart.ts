@@ -234,8 +234,8 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 	get minimumHeight(): number {
 		const wcoEnabled = isWeb && isWCOEnabled();
 		let value = this.isCommandCenterVisible || wcoEnabled ? DEFAULT_CUSTOM_TITLEBAR_HEIGHT : 30;
-		const vgaiHeight = this.configurationService.getValue('window.titleBarHeight'); // vgai core edit 1 (WORK.md U9)
-		if (typeof vgaiHeight === 'number' && vgaiHeight > 0) { return vgaiHeight; }
+		const volterHeight = this.configurationService.getValue('window.titleBarHeight'); // volter core edit 1 (WORK.md U9)
+		if (typeof volterHeight === 'number' && volterHeight > 0) { return volterHeight; }
 		if (wcoEnabled) {
 			value = Math.max(value, getWCOTitlebarAreaRect(getWindow(this.element))?.height ?? 0);
 		}
@@ -401,7 +401,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			this.recreateTitle();
 		}
 
-		if (event.affectsConfiguration('window.titleBarHeight')) { this._onDidChange.fire(undefined); } // vgai core edit 1 (WORK.md U9)
+		if (event.affectsConfiguration('window.titleBarHeight')) { this._onDidChange.fire(undefined); } // volter core edit 1 (WORK.md U9)
 	}
 
 	private recreateTitle(): void {

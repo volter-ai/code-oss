@@ -35,7 +35,7 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 	//#region IView
 
 	override get minimumHeight(): number {
-		if (!isMacintosh || typeof this.configurationService.getValue('window.titleBarHeight') === 'number') { // vgai core edit 1 (WORK.md U9)
+		if (!isMacintosh || typeof this.configurationService.getValue('window.titleBarHeight') === 'number') { // volter core edit 1 (WORK.md U9)
 			return super.minimumHeight;
 		}
 
