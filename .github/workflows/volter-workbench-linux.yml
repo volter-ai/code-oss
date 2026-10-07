@@ -1,0 +1,193 @@
+name: Volter workbench release (linux-x64)
+
+# Cuts one Volter product's linux-x64 workbench on a GitHub-hosted runner and publishes it as a release of this
+# repository: the same bytes, tag and assets as `scripts/workbench/build-release.mjs --publish` in volter-ai/editor
+# cuts on a workstation (tag `<product>-<fork sha 12>-<editor sha 12>-linux-x64`, assets the tarball and BUILD.json,
+# BUILD.json as the notes). The build is the heaviest thing in the estate, so it runs here rather than on a machine
+# that is doing something else.
+#
+# It builds at an editor revision that is on volter-ai/editor's main and at the fork commit that revision pins
+# (`packages/editor-core/workbench/FORK.json`), so a run names both of its sources. The build job holds no write
+# token: it runs thousands of dependency install scripts. Only the publish job can write, and it runs nothing but
+# build-release's `--publish --out`, which re-hashes the cut against its BUILD.json and uploads it; build-release
+# refuses a tag that exists, so a release is never replaced. It runs only when dispatched and gates nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      editor_revision:
+        description: Full volter-ai/editor commit SHA to build (must be on main)
+        required: true
+        type: string
+      product:
+        description: Product id (scripts/workbench/products)
+        required: true
+        default: model-editor
+        type: string
+      frontend_sha256:
+        description: Optional SHA256 the installed @volter/supercode-frontend-vscode dist/extension.js must have
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: volter-workbench-linux-${{ inputs.product }}-${{ inputs.editor_revision }}
+  cancel-in-progress: false
+
+env:
+  EDITOR_REVISION: ${{ inputs.editor_revision }}
+  PRODUCT: ${{ inputs.product }}
+  FRONTEND_SHA256: ${{ inputs.frontend_sha256 }}
+  GIT_LFS_SKIP_SMUDGE: '1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - name: Check the inputs
+        run: |
+          [[ "$EDITOR_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::editor_revision must be a full 40-character commit SHA"; exit 1; }
+          [[ "$PRODUCT" =~ ^[a-z0-9-]+$ ]] || { echo "::error::product must be a product id"; exit 1; }
+          [[ -z "$FRONTEND_SHA256" || "$FRONTEND_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::frontend_sha256 must be a SHA256"; exit 1; }
+
+      - name: Check out the editor
+        uses: actions/checkout@v4
+        with:
+          repository: volter-ai/editor
+          ref: ${{ inputs.editor_revision }}
+          path: editor
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Refuse a revision that is not on the editor's main
+        working-directory: editor
+        run: |
+          git merge-base --is-ancestor "$EDITOR_REVISION" origin/main || { echo "::error::$EDITOR_REVISION is not on volter-ai/editor main"; exit 1; }
+
+      - name: Read the fork pin
+        id: pin
+        run: echo "commit=$(node -p "require('./editor/packages/editor-core/workbench/FORK.json').commit")" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the fork at the pin
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pin.outputs.commit }}
+          path: code-oss
+          lfs: false
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: code-oss/.nvmrc
+
+      - name: Install the fork's native build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential pkg-config libx11-dev libx11-xcb-dev libxkbfile-dev libkrb5-dev
+
+      - name: Make room (work on /mnt, 8 GB more swap)
+        run: |
+          sudo mkdir -p /mnt/wb && sudo chown "$USER" /mnt/wb
+          free_gb=$(df --output=avail -BG /mnt | tail -1 | tr -dc 0-9)
+          echo "/mnt has ${free_gb} GB free"
+          (( free_gb >= 25 )) || { echo "::error::/mnt has ${free_gb} GB free; the cut wants about 25 (8 swap plus clone, node_modules, out-build and package with room)"; exit 1; }
+          sudo fallocate -l 8G /mnt/wb-swap && sudo chmod 600 /mnt/wb-swap && sudo mkswap /mnt/wb-swap && sudo swapon /mnt/wb-swap
+          free -g; df -h / /mnt
+
+      - name: Install the editor
+        working-directory: editor
+        run: |
+          npm ci --ignore-scripts
+          ext=node_modules/@volter/supercode-frontend-vscode/dist/extension.js
+          version=$(node -p "require('./node_modules/@volter/supercode-frontend-vscode/package.json').version")
+          sha=$(sha256sum "$ext" | cut -d' ' -f1)
+          echo "supercode-frontend-vscode $version, dist/extension.js $sha"
+          echo "FRONTEND_VERSION=$version" >> "$GITHUB_ENV"
+          echo "FRONTEND_ACTUAL_SHA256=$sha" >> "$GITHUB_ENV"
+          if [[ -n "$FRONTEND_SHA256" && "$sha" != "$FRONTEND_SHA256" ]]; then
+            echo "::error::dist/extension.js is $sha, expected $FRONTEND_SHA256"; exit 1
+          fi
+
+      - name: Cut the release
+        working-directory: editor
+        run: |
+          node scripts/workbench/build-release.mjs --product "$PRODUCT" --platform linux-x64 \
+            --checkout "$GITHUB_WORKSPACE/code-oss" --work /mnt/wb/work --out /mnt/wb/out --min-ram 15
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### $PRODUCT linux-x64 at editor $EDITOR_REVISION"
+            echo "Chat: supercode-frontend-vscode ${FRONTEND_VERSION:-?}, dist/extension.js \`${FRONTEND_ACTUAL_SHA256:-?}\`"
+            if [[ -f /mnt/wb/out/BUILD.json ]]; then
+              echo "Tarball SHA256: \`$(node -p "require('/mnt/wb/out/BUILD.json').tarballSha256")\`"
+              echo '```json'; cat /mnt/wb/out/BUILD.json; echo '```'
+            else
+              echo "No BUILD.json: the release was not cut."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Hand the cut to the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ inputs.product }}-linux-x64
+          path: |
+            /mnt/wb/out/BUILD.json
+            /mnt/wb/out/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the editor's release script
+        uses: actions/checkout@v4
+        with:
+          repository: volter-ai/editor
+          ref: ${{ inputs.editor_revision }}
+          path: editor
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Fetch the cut
+        uses: actions/download-artifact@v4
+        with:
+          name: release-${{ inputs.product }}-linux-x64
+          path: release
+
+      - name: Check the cut names what was asked for
+        working-directory: editor
+        run: |
+          node - "$GITHUB_WORKSPACE/release/BUILD.json" <<'EOF'
+          const record = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
+          const pin = require('./packages/editor-core/workbench/FORK.json').commit;
+          const wrong = [
+            ['product', record.product, process.env.PRODUCT],
+            ['platform', record.platform, 'linux-x64'],
+            ['editorSource.revision', record.editorSource?.revision, process.env.EDITOR_REVISION],
+            ['commit', record.commit, pin],
+          ].filter(([, got, want]) => got !== want);
+          if (typeof record.tarball !== 'string' || !/^[\w.-]+\.tar\.gz$/.test(record.tarball)) wrong.push(['tarball', record.tarball, 'a bare .tar.gz name']);
+          for (const [key, got, want] of wrong) console.log(`::error::BUILD.json ${key} is ${JSON.stringify(got)}, expected ${want}`);
+          process.exit(wrong.length ? 1 : 0);
+          EOF
+
+      - name: Publish it
+        working-directory: editor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/workbench/build-release.mjs --publish --out "$GITHUB_WORKSPACE/release"
