@@ -1,16 +1,19 @@
-name: Volter workbench release (linux-x64)
+name: Volter workbench release (win32-x64)
 
-# Cuts one Volter product's linux-x64 workbench on a GitHub-hosted runner and publishes it as a release of this
-# repository: the same bytes, tag and assets as `scripts/workbench/build-release.mjs --publish` in volter-ai/editor
-# cuts on a workstation (tag `<product>-<fork sha 12>-<editor sha 12>-linux-x64`, assets the tarball and BUILD.json,
-# BUILD.json as the notes). The build is the heaviest thing in the estate, so it runs here rather than on a machine
-# that is doing something else.
+# Cuts one Volter product's win32-x64 workbench on a GitHub-hosted Windows runner and publishes it as a release of
+# this repository: the same bytes, tag and assets as `scripts/workbench/build-release.mjs --publish` in
+# volter-ai/editor cuts on a Windows workstation (tag `<product>-<fork sha 12>-<editor sha 12>-win32-x64`, assets
+# the tarball and BUILD.json, BUILD.json as the notes). A release is built on its own platform (build-release
+# packages this machine's native modules and the node downloaded for the target), so the win32 cut needs Windows;
+# it is the heaviest thing in the estate, so it runs here rather than on a machine that is doing something else.
 #
-# It builds at an editor revision that is on volter-ai/editor's main and at the fork commit that revision pins
-# (`packages/editor-core/workbench/FORK.json`), so a run names both of its sources. The build job holds no write
-# token: it runs thousands of dependency install scripts. Only the publish job can write, and it runs nothing but
-# build-release's `--publish --out`, which re-hashes the cut against its BUILD.json and uploads it; build-release
-# refuses a tag that exists, so a release is never replaced. It runs only when dispatched and gates nothing.
+# It is the twin of volter-workbench-linux.yml and keeps every one of its rules; only the machine differs. It builds
+# at an editor revision that is on volter-ai/editor's main and at the fork commit that revision pins
+# (`packages/editor-core/workbench/FORK.json`, read as git data), so a run names both of its sources. The build job
+# holds no write token: it runs thousands of dependency install scripts. Only the publish job can write, and it
+# runs nothing but build-release's `--publish --out`, which re-hashes the cut against its BUILD.json and uploads it;
+# build-release refuses a tag that exists, so a release is never replaced. It runs only when dispatched and gates
+# nothing.
 #
 # `editor_pull_request` is the one way past the main rule, and it is narrow. A change that renames a product (or
 # adds one) cannot merge until it pins that product's workbench releases, and those releases record which product
@@ -22,6 +25,30 @@ name: Volter workbench release (linux-x64)
 # BUILD.json, which the product pins by hash, is not touched. The publish job, which holds the write token, never
 # runs the unmerged head's code: it runs build-release from editor main and refuses unless the head's copy of it
 # is the same. Left empty, the revision must be on main as before.
+#
+# What is Windows about it, and why:
+#   * windows-2022, not windows-latest. Code-OSS's preinstall (build/npm/preinstall.ts) accepts only Visual Studio
+#     2022 or 2019, and windows-latest is the Windows Server 2025 image with Visual Studio 2026 alone. windows-2022
+#     carries VS 2022 Enterprise with the C++ x64 tools and the Spectre-mitigated runtimes node-gyp builds against.
+#   * The build job's steps run in Git Bash (`shell: bash`), so every check reads exactly as the linux twin's.
+#     MSYS_NO_PATHCONV stops Git Bash from rewriting arguments it takes for POSIX path lists (it turns
+#     `<rev>:.<path>` into `<rev>;.<path>`); nothing here relies on that rewriting. PowerShell is used only to make
+#     room, where it has to call Windows itself.
+#   * Git checks out with core.longpaths (the fork's extensions/copilot has paths past 260 characters until the
+#     overlay removes it) and LF endings (core.autocrlf false, core.eol lf), so both trees hold the bytes git has,
+#     as on linux. The work root is short (`<drive>:\wb`): Code-OSS's deepest file is about 186 characters.
+#   * Room: the cut wants about 17 GB of disk, plus page file. It goes on D: when D: has the room and on C:
+#     otherwise, under `<drive>:\wb\work` and `<drive>:\wb\out`. The runner has 16 GB of RAM and the out-build emit
+#     wants a 9 GB node heap (build-release passes --max-old-space-size=9216); Windows does not overcommit, so the
+#     commit limit (RAM plus page files) is raised to at least 28 GB, what the linux twin has with its added swap.
+#     That is done without a reboot by NtCreatePagingFile, the call Windows itself uses to create a page file at
+#     boot, after enabling SeCreatePagefilePrivilege (the runner runs as an administrator). To change it, change
+#     `wantCommitGB`; to see what happened, the step prints the page files and the commit limit before and after.
+#   * Python 3.12 from actions/setup-python is node-gyp's, named in npm_config_python for the Code-OSS install.
+#   * --min-ram 15, as on linux: build-release rounds the runner's RAM, and a 16 GB runner reports a little under
+#     16. The page file is what makes the 9 GB heap safe on it.
+#   * The publish job stays on ubuntu-latest: `--publish --out` only reads BUILD.json, re-hashes the tarball and
+#     calls `gh`, none of which depends on the platform the cut is for.
 
 on:
   workflow_dispatch:
@@ -48,7 +75,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: volter-workbench-linux-${{ inputs.product }}-${{ inputs.editor_revision }}
+  group: volter-workbench-win32-${{ inputs.product }}-${{ inputs.editor_revision }}
   cancel-in-progress: false
 
 env:
@@ -60,10 +87,16 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
+    runs-on: windows-2022
+    # The longest a GitHub-hosted job may run.
+    timeout-minutes: 360
     permissions:
       contents: read
+    env:
+      MSYS_NO_PATHCONV: '1'
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Check the inputs
         run: |
@@ -71,6 +104,12 @@ jobs:
           [[ -z "$EDITOR_PULL_REQUEST" || "$EDITOR_PULL_REQUEST" =~ ^[1-9][0-9]*$ ]] || { echo "::error::editor_pull_request must be a pull request number"; exit 1; }
           [[ "$PRODUCT" =~ ^[a-z0-9-]+$ ]] || { echo "::error::product must be a product id"; exit 1; }
           [[ -z "$FRONTEND_SHA256" || "$FRONTEND_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::frontend_sha256 must be a SHA256"; exit 1; }
+
+      - name: Have git keep long paths and the bytes it holds
+        run: |
+          git config --global core.longpaths true
+          git config --global core.autocrlf false
+          git config --global core.eol lf
 
       - name: Check out the editor
         uses: actions/checkout@v4
@@ -98,6 +137,7 @@ jobs:
           pr=$(gh api "repos/volter-ai/editor/pulls/$EDITOR_PULL_REQUEST" \
             --jq '[.state, .base.ref, .head.sha, (.head.repo.full_name // "a deleted repository")] | @tsv') \
             || { echo "::error::could not read volter-ai/editor PR #$EDITOR_PULL_REQUEST"; exit 1; }
+          pr=${pr//$'\r'/}
           IFS=$'\t' read -r state base head repo <<< "$pr"
           echo "volter-ai/editor PR #$EDITOR_PULL_REQUEST: $state, base $base, head $head from $repo"
           [[ "$state" == open ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST is $state, not open"; exit 1; }
@@ -127,21 +167,115 @@ jobs:
         with:
           node-version-file: code-oss/.nvmrc
 
-      - name: Install the fork's native build dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y build-essential pkg-config libx11-dev libx11-xcb-dev libxkbfile-dev libkrb5-dev
+      # node-gyp's Python for the fork's native modules; the compiler is the image's Visual Studio 2022.
+      - name: Set up node-gyp's Python
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-      - name: Make room (work on /mnt, 8 GB more swap)
+      # Picks the drive (D: when it has the room, else C:) and raises the commit limit to wantCommitGB with a page
+      # file on that drive, created live by NtCreatePagingFile (see the header). The drive is this step's output,
+      # computed here from the runner alone; nothing from either checkout reaches it.
+      - name: Make room (work on D:, commit limit to 28 GB)
+        id: room
+        shell: powershell
         run: |
-          sudo mkdir -p /mnt/wb && sudo chown "$USER" /mnt/wb
-          free_gb=$(df --output=avail -BG /mnt | tail -1 | tr -dc 0-9)
-          echo "/mnt has ${free_gb} GB free"
-          (( free_gb >= 25 )) || { echo "::error::/mnt has ${free_gb} GB free; the cut wants about 25 (8 swap plus clone, node_modules, out-build and package with room)"; exit 1; }
-          sudo fallocate -l 8G /mnt/wb-swap && sudo chmod 600 /mnt/wb-swap && sudo mkswap /mnt/wb-swap && sudo swapon /mnt/wb-swap
-          free -g; df -h / /mnt
+          $ErrorActionPreference = 'Stop'
+          $wantCommitGB = 28
+          $cutGB = 17
+          $os = Get-CimInstance Win32_OperatingSystem
+          $commitGB = $os.TotalVirtualMemorySize / 1MB
+          'RAM {0:N1} GB, commit limit {1:N1} GB' -f ($os.TotalVisibleMemorySize / 1MB), $commitGB
+          Get-CimInstance Win32_PageFileUsage | ForEach-Object { 'page file {0}: {1} MB' -f $_.Name, $_.AllocatedBaseSize }
+          $growGB = [int64][math]::Max(0, [math]::Ceiling($wantCommitGB - $commitGB))
+          $needGB = $cutGB + $growGB
+          $drive = $null
+          foreach ($letter in 'D', 'C') {
+            $volume = Get-Volume -DriveLetter $letter -ErrorAction SilentlyContinue
+            if (-not $volume) { "${letter}: is not there"; continue }
+            $freeGB = [math]::Floor($volume.SizeRemaining / 1GB)
+            "${letter}: has $freeGB GB free"
+            if ($freeGB -ge $needGB) { $drive = $letter; break }
+          }
+          if (-not $drive) {
+            "::error::neither D: nor C: has $needGB GB free; the cut wants about $cutGB (clone, node_modules, out-build and package with room) plus $growGB of page file"
+            exit 1
+          }
+          if ($growGB -gt 0) {
+            $existingMB = (Get-CimInstance Win32_PageFileUsage | Where-Object { $_.Name -like "${drive}:\*" } | Measure-Object -Property AllocatedBaseSize -Sum).Sum
+            $bytes = ([int64]$existingMB * 1MB) + ($growGB * 1GB)
+            Add-Type -TypeDefinition @'
+          using System;
+          using System.ComponentModel;
+          using System.Runtime.InteropServices;
+          using System.Text;
 
+          public static class VolterPagefile
+          {
+              [StructLayout(LayoutKind.Sequential)]
+              struct LUID { public uint Low; public int High; }
+
+              [StructLayout(LayoutKind.Sequential)]
+              struct TOKEN_PRIVILEGES { public uint Count; public LUID Luid; public uint Attributes; }
+
+              [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+              struct UNICODE_STRING { public ushort Length; public ushort MaximumLength; public string Buffer; }
+
+              [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+              static extern bool LookupPrivilegeValue(string system, string name, out LUID luid);
+              [DllImport("advapi32.dll", SetLastError = true)]
+              static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+              [DllImport("advapi32.dll", SetLastError = true)]
+              static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll, ref TOKEN_PRIVILEGES state, uint length, IntPtr previous, IntPtr returned);
+              [DllImport("kernel32.dll")]
+              static extern IntPtr GetCurrentProcess();
+              [DllImport("kernel32.dll", SetLastError = true)]
+              static extern bool CloseHandle(IntPtr handle);
+              [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+              static extern uint QueryDosDevice(string device, StringBuilder target, int max);
+              [DllImport("ntdll.dll", CharSet = CharSet.Unicode)]
+              static extern int NtCreatePagingFile(ref UNICODE_STRING name, ref long minimum, ref long maximum, uint priority);
+
+              // Creates <drive>\pagefile.sys, or resizes the one there, without a reboot.
+              public static string Set(string drive, long minimum, long maximum)
+              {
+                  LUID luid;
+                  if (!LookupPrivilegeValue(null, "SeCreatePagefilePrivilege", out luid)) throw new Win32Exception();
+                  IntPtr token;
+                  if (!OpenProcessToken(GetCurrentProcess(), 0x28 /* TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY */, out token)) throw new Win32Exception();
+                  try
+                  {
+                      var state = new TOKEN_PRIVILEGES { Count = 1, Luid = luid, Attributes = 2 /* SE_PRIVILEGE_ENABLED */ };
+                      if (!AdjustTokenPrivileges(token, false, ref state, 0, IntPtr.Zero, IntPtr.Zero)) throw new Win32Exception();
+                      int adjusted = Marshal.GetLastWin32Error();
+                      if (adjusted != 0) throw new Win32Exception(adjusted);
+                  }
+                  finally { CloseHandle(token); }
+                  var device = new StringBuilder(260);
+                  if (QueryDosDevice(drive, device, device.Capacity) == 0) throw new Win32Exception();
+                  string path = device.ToString() + @"\pagefile.sys";
+                  var name = new UNICODE_STRING { Length = (ushort)(path.Length * 2), MaximumLength = (ushort)((path.Length + 1) * 2), Buffer = path };
+                  int status = NtCreatePagingFile(ref name, ref minimum, ref maximum, 0);
+                  if (status != 0) throw new Exception(string.Format("NtCreatePagingFile({0}) returned NTSTATUS 0x{1:X8}", path, status));
+                  return path;
+              }
+          }
+          '@
+            $path = [VolterPagefile]::Set("${drive}:", $bytes, $bytes)
+            'page file {0} ({1}:) set to {2} GB' -f $path, $drive, ($bytes / 1GB)
+          }
+          $commitGB = (Get-CimInstance Win32_OperatingSystem).TotalVirtualMemorySize / 1MB
+          'commit limit now {0:N1} GB' -f $commitGB
+          if ($commitGB -lt $wantCommitGB - 1) { "::warning::the commit limit is $([math]::Round($commitGB, 1)) GB, under the $wantCommitGB GB this asked for" }
+          New-Item -ItemType Directory -Force "${drive}:\wb" | Out-Null
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "root=${drive}:/wb`n")
+          Get-Volume | Where-Object DriveLetter | Format-Table -AutoSize DriveLetter, @{ n = 'FreeGB'; e = { [math]::Floor($_.SizeRemaining / 1GB) } }, @{ n = 'SizeGB'; e = { [math]::Floor($_.Size / 1GB) } }
+
+      # The version and hash are this step's outputs, checked for shape first; the run's environment is not
+      # written from anything the checked-out head installed.
       - name: Install the editor
+        id: editor
         working-directory: editor
         run: |
           npm ci --ignore-scripts
@@ -149,30 +283,39 @@ jobs:
           version=$(node -p 'JSON.parse(require("fs").readFileSync("node_modules/@volter/supercode-frontend-vscode/package.json", "utf8")).version')
           sha=$(sha256sum "$ext" | cut -d' ' -f1)
           echo "supercode-frontend-vscode $version, dist/extension.js $sha"
-          echo "FRONTEND_VERSION=$version" >> "$GITHUB_ENV"
-          echo "FRONTEND_ACTUAL_SHA256=$sha" >> "$GITHUB_ENV"
+          [[ "$version" =~ ^[0-9A-Za-z.+-]+$ && "$sha" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::supercode-frontend-vscode's version or hash is not one this can report"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
           if [[ -n "$FRONTEND_SHA256" && "$sha" != "$FRONTEND_SHA256" ]]; then
             echo "::error::dist/extension.js is $sha, expected $FRONTEND_SHA256"; exit 1
           fi
 
       - name: Cut the release
         working-directory: editor
+        env:
+          WB_ROOT: ${{ steps.room.outputs.root }}
+          npm_config_python: ${{ steps.python.outputs.python-path }}
         run: |
-          node scripts/workbench/build-release.mjs --product "$PRODUCT" --platform linux-x64 \
-            --checkout "$GITHUB_WORKSPACE/code-oss" --work /mnt/wb/work --out /mnt/wb/out --min-ram 15
+          node scripts/workbench/build-release.mjs --product "$PRODUCT" --platform win32-x64 \
+            --checkout "$GITHUB_WORKSPACE/code-oss" --work "$WB_ROOT/work" --out "$WB_ROOT/out" --min-ram 15
 
       - name: Summary
         if: always()
+        env:
+          WB_ROOT: ${{ steps.room.outputs.root }}
+          FRONTEND_VERSION: ${{ steps.editor.outputs.version }}
+          FRONTEND_ACTUAL_SHA256: ${{ steps.editor.outputs.sha256 }}
         run: |
+          record="$WB_ROOT/out/BUILD.json"
           {
-            echo "### $PRODUCT linux-x64 at editor $EDITOR_REVISION"
+            echo "### $PRODUCT win32-x64 at editor $EDITOR_REVISION"
             if [[ -n "$EDITOR_PULL_REQUEST" ]]; then
               echo "Built from volter-ai/editor PR #$EDITOR_PULL_REQUEST head $EDITOR_REVISION (unmerged at cut time)."
             fi
             echo "Chat: supercode-frontend-vscode ${FRONTEND_VERSION:-?}, dist/extension.js \`${FRONTEND_ACTUAL_SHA256:-?}\`"
-            if [[ -f /mnt/wb/out/BUILD.json ]]; then
-              echo "Tarball SHA256: \`$(node -p 'JSON.parse(require("fs").readFileSync("/mnt/wb/out/BUILD.json", "utf8")).tarballSha256')\`"
-              echo '```json'; cat /mnt/wb/out/BUILD.json; echo '```'
+            if [[ -n "$WB_ROOT" && -f "$record" ]]; then
+              echo "Tarball SHA256: \`$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).tarballSha256' "$record")\`"
+              echo '```json'; cat "$record"; echo '```'
             else
               echo "No BUILD.json: the release was not cut."
             fi
@@ -181,10 +324,10 @@ jobs:
       - name: Hand the cut to the publish job
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ inputs.product }}-linux-x64
+          name: release-${{ inputs.product }}-win32-x64
           path: |
-            /mnt/wb/out/BUILD.json
-            /mnt/wb/out/*.tar.gz
+            ${{ steps.room.outputs.root }}/out/BUILD.json
+            ${{ steps.room.outputs.root }}/out/*.tar.gz
           if-no-files-found: error
           retention-days: 7
 
@@ -240,7 +383,7 @@ jobs:
       - name: Fetch the cut
         uses: actions/download-artifact@v4
         with:
-          name: release-${{ inputs.product }}-linux-x64
+          name: release-${{ inputs.product }}-win32-x64
           path: release
 
       - name: Check the cut names what was asked for
@@ -255,7 +398,7 @@ jobs:
           const pin = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/fork-pin.json`, 'utf8')).commit;
           const wrong = [
             ['product', record.product, process.env.PRODUCT],
-            ['platform', record.platform, 'linux-x64'],
+            ['platform', record.platform, 'win32-x64'],
             ['editorSource.revision', record.editorSource?.revision, process.env.EDITOR_REVISION],
             ['commit', record.commit, pin],
           ].filter(([, got, want]) => got !== want);
