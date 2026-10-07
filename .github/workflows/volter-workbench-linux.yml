@@ -169,6 +169,23 @@ jobs:
           name: release-${{ inputs.product }}-linux-x64
           path: release
 
+      - name: Check the cut names what was asked for
+        working-directory: editor
+        run: |
+          node - "$GITHUB_WORKSPACE/release/BUILD.json" <<'EOF'
+          const record = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
+          const pin = require('./packages/editor-core/workbench/FORK.json').commit;
+          const wrong = [
+            ['product', record.product, process.env.PRODUCT],
+            ['platform', record.platform, 'linux-x64'],
+            ['editorSource.revision', record.editorSource?.revision, process.env.EDITOR_REVISION],
+            ['commit', record.commit, pin],
+          ].filter(([, got, want]) => got !== want);
+          if (typeof record.tarball !== 'string' || !/^[\w.-]+\.tar\.gz$/.test(record.tarball)) wrong.push(['tarball', record.tarball, 'a bare .tar.gz name']);
+          for (const [key, got, want] of wrong) console.log(`::error::BUILD.json ${key} is ${JSON.stringify(got)}, expected ${want}`);
+          process.exit(wrong.length ? 1 : 0);
+          EOF
+
       - name: Publish it
         working-directory: editor
         env:
