@@ -11,13 +11,28 @@ name: Volter workbench release (linux-x64)
 # token: it runs thousands of dependency install scripts. Only the publish job can write, and it runs nothing but
 # build-release's `--publish --out`, which re-hashes the cut against its BUILD.json and uploads it; build-release
 # refuses a tag that exists, so a release is never replaced. It runs only when dispatched and gates nothing.
+#
+# `editor_pull_request` is the one way past the main rule, and it is narrow. A change that renames a product (or
+# adds one) cannot merge until it pins that product's workbench releases, and those releases record which product
+# they were built for, so they have to be cut from the change's own reviewed source before it is on main. Name the
+# volter-ai/editor pull request and the build refuses unless that pull request is open, targets main, comes from
+# volter-ai/editor itself (not a fork), and has `editor_revision` as its head exactly. Reviews happen off GitHub,
+# so this checks no approvals: what it pins is that the bytes are the head the reviewers were sent. The job summary
+# and the release notes then say the release was built from that pull request's head, unmerged at cut time;
+# BUILD.json, which the product pins by hash, is not touched. The publish job, which holds the write token, never
+# runs the unmerged head's code: it runs build-release from editor main and refuses unless the head's copy of it
+# is the same. Left empty, the revision must be on main as before.
 
 on:
   workflow_dispatch:
     inputs:
       editor_revision:
-        description: Full volter-ai/editor commit SHA to build (must be on main)
+        description: Full volter-ai/editor commit SHA to build (must be on main, or the head of editor_pull_request)
         required: true
+        type: string
+      editor_pull_request:
+        description: Optional open volter-ai/editor PR number whose head is editor_revision (builds an unmerged head)
+        required: false
         type: string
       product:
         description: Product id (scripts/workbench/products)
@@ -38,6 +53,7 @@ concurrency:
 
 env:
   EDITOR_REVISION: ${{ inputs.editor_revision }}
+  EDITOR_PULL_REQUEST: ${{ inputs.editor_pull_request }}
   PRODUCT: ${{ inputs.product }}
   FRONTEND_SHA256: ${{ inputs.frontend_sha256 }}
   GIT_LFS_SKIP_SMUDGE: '1'
@@ -52,6 +68,7 @@ jobs:
       - name: Check the inputs
         run: |
           [[ "$EDITOR_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::editor_revision must be a full 40-character commit SHA"; exit 1; }
+          [[ -z "$EDITOR_PULL_REQUEST" || "$EDITOR_PULL_REQUEST" =~ ^[1-9][0-9]*$ ]] || { echo "::error::editor_pull_request must be a pull request number"; exit 1; }
           [[ "$PRODUCT" =~ ^[a-z0-9-]+$ ]] || { echo "::error::product must be a product id"; exit 1; }
           [[ -z "$FRONTEND_SHA256" || "$FRONTEND_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::frontend_sha256 must be a SHA256"; exit 1; }
 
@@ -66,13 +83,37 @@ jobs:
           persist-credentials: false
 
       - name: Refuse a revision that is not on the editor's main
+        if: inputs.editor_pull_request == ''
         working-directory: editor
         run: |
           git merge-base --is-ancestor "$EDITOR_REVISION" origin/main || { echo "::error::$EDITOR_REVISION is not on volter-ai/editor main"; exit 1; }
 
+      # The job's token is read-only (contents: read) and lives in this step's env alone; nothing here installs
+      # or runs a dependency.
+      - name: Refuse a revision that is not the head of the named editor pull request
+        if: inputs.editor_pull_request != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr=$(gh api "repos/volter-ai/editor/pulls/$EDITOR_PULL_REQUEST" \
+            --jq '[.state, .base.ref, .head.sha, (.head.repo.full_name // "a deleted repository")] | @tsv') \
+            || { echo "::error::could not read volter-ai/editor PR #$EDITOR_PULL_REQUEST"; exit 1; }
+          IFS=$'\t' read -r state base head repo <<< "$pr"
+          echo "volter-ai/editor PR #$EDITOR_PULL_REQUEST: $state, base $base, head $head from $repo"
+          [[ "$state" == open ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST is $state, not open"; exit 1; }
+          [[ "$base" == main ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST targets $base, not main"; exit 1; }
+          [[ "$repo" == volter-ai/editor ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST comes from $repo, not volter-ai/editor"; exit 1; }
+          [[ "$head" == "$EDITOR_REVISION" ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST head is $head, not $EDITOR_REVISION"; exit 1; }
+
+      # The pin is read as data from git, never require()d from the tree: a FORK.json committed as a symlink to a
+      # script would otherwise run as code. A symlink's blob is its target path, which fails the parse.
       - name: Read the fork pin
         id: pin
-        run: echo "commit=$(node -p "require('./editor/packages/editor-core/workbench/FORK.json').commit")" >> "$GITHUB_OUTPUT"
+        run: |
+          commit=$(git -C editor cat-file blob "$EDITOR_REVISION:packages/editor-core/workbench/FORK.json" \
+            | node -e 'console.log(JSON.parse(require("fs").readFileSync(0, "utf8")).commit)')
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::packages/editor-core/workbench/FORK.json at $EDITOR_REVISION pins no full commit SHA"; exit 1; }
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
       - name: Check out the fork at the pin
         uses: actions/checkout@v4
@@ -105,7 +146,7 @@ jobs:
         run: |
           npm ci --ignore-scripts
           ext=node_modules/@volter/supercode-frontend-vscode/dist/extension.js
-          version=$(node -p "require('./node_modules/@volter/supercode-frontend-vscode/package.json').version")
+          version=$(node -p 'JSON.parse(require("fs").readFileSync("node_modules/@volter/supercode-frontend-vscode/package.json", "utf8")).version')
           sha=$(sha256sum "$ext" | cut -d' ' -f1)
           echo "supercode-frontend-vscode $version, dist/extension.js $sha"
           echo "FRONTEND_VERSION=$version" >> "$GITHUB_ENV"
@@ -125,9 +166,12 @@ jobs:
         run: |
           {
             echo "### $PRODUCT linux-x64 at editor $EDITOR_REVISION"
+            if [[ -n "$EDITOR_PULL_REQUEST" ]]; then
+              echo "Built from volter-ai/editor PR #$EDITOR_PULL_REQUEST head $EDITOR_REVISION (unmerged at cut time)."
+            fi
             echo "Chat: supercode-frontend-vscode ${FRONTEND_VERSION:-?}, dist/extension.js \`${FRONTEND_ACTUAL_SHA256:-?}\`"
             if [[ -f /mnt/wb/out/BUILD.json ]]; then
-              echo "Tarball SHA256: \`$(node -p "require('/mnt/wb/out/BUILD.json').tarballSha256")\`"
+              echo "Tarball SHA256: \`$(node -p 'JSON.parse(require("fs").readFileSync("/mnt/wb/out/BUILD.json", "utf8")).tarballSha256')\`"
               echo '```json'; cat /mnt/wb/out/BUILD.json; echo '```'
             else
               echo "No BUILD.json: the release was not cut."
@@ -159,6 +203,36 @@ jobs:
           path: editor
           persist-credentials: false
 
+      # This job holds the write token, and build-release's `--publish` is where a release's immutability lives
+      # (it refuses a tag that exists). So code that has never merged does not run here: for a pull request head
+      # the script runs from editor main, and the run refuses unless the head's build-release.mjs and the helpers
+      # it imports that are its own (serial-build.mjs, runtime-notices.mjs) are the same git entries as main's
+      # (mode and blob, so a symlink never passes for a file). The head's FORK.json still checks the cut below.
+      # overlay.mjs is imported too but not compared: `--publish --out` reads only its TARGETS, and main's copy
+      # is the one that runs. Nothing in this job runs in, require()s or imports from the checked-out head's
+      # tree: its files are read as git data, and the cut from the build job as data whose entries must be
+      # regular files.
+      - name: Check out editor main's release script (pull request head)
+        if: inputs.editor_pull_request != ''
+        uses: actions/checkout@v4
+        with:
+          repository: volter-ai/editor
+          ref: main
+          path: editor-main
+          persist-credentials: false
+
+      - name: Refuse a pull request head whose release script is not main's
+        if: inputs.editor_pull_request != ''
+        run: |
+          echo "Publishing with build-release from editor main $(git -C editor-main rev-parse HEAD)"
+          for file in build-release.mjs serial-build.mjs runtime-notices.mjs; do
+            path="scripts/workbench/$file"
+            main_entry=$(git -C editor-main ls-tree HEAD -- "$path")
+            head_entry=$(git -C editor ls-tree "$EDITOR_REVISION" -- "$path")
+            [[ -n "$main_entry" && "$head_entry" == "$main_entry" ]] \
+              || { echo "::error::$path at $EDITOR_REVISION differs from editor main; a pull request head is published only with main's release script"; exit 1; }
+          done
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -170,11 +244,15 @@ jobs:
           path: release
 
       - name: Check the cut names what was asked for
-        working-directory: editor
         run: |
-          node - "$GITHUB_WORKSPACE/release/BUILD.json" <<'EOF'
-          const record = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
-          const pin = require('./packages/editor-core/workbench/FORK.json').commit;
+          git -C editor cat-file blob "$EDITOR_REVISION:packages/editor-core/workbench/FORK.json" > "$RUNNER_TEMP/fork-pin.json"
+          node - <<'EOF'
+          const fs = require('fs');
+          for (const name of fs.readdirSync('release')) {
+            if (!fs.lstatSync(`release/${name}`).isFile()) { console.log(`::error::release/${name} from the build job is not a regular file`); process.exit(1); }
+          }
+          const record = JSON.parse(fs.readFileSync('release/BUILD.json', 'utf8'));
+          const pin = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/fork-pin.json`, 'utf8')).commit;
           const wrong = [
             ['product', record.product, process.env.PRODUCT],
             ['platform', record.platform, 'linux-x64'],
@@ -187,7 +265,28 @@ jobs:
           EOF
 
       - name: Publish it
-        working-directory: editor
+        working-directory: ${{ inputs.editor_pull_request == '' && 'editor' || 'editor-main' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/workbench/build-release.mjs --publish --out "$GITHUB_WORKSPACE/release"
+
+      # build-release uses BUILD.json as the notes. The provenance line goes after it in the notes only: the
+      # BUILD.json asset, which a product reads and pins by hash, stays the bytes that were cut. The tag is
+      # build-release's own `releaseTag`, derived from BUILD.json's fields. The release is already up by now, so
+      # a failure here fails the run: a release from an unmerged head must never sit there without saying so.
+      - name: Say the release came from an unmerged pull request head (fails the run if the notes are not edited)
+        if: inputs.editor_pull_request != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(node -e '
+            const fs = require("fs");
+            const path = process.argv[1];
+            if (!fs.lstatSync(path).isFile()) throw new Error(`${path} is not a regular file`);
+            const r = JSON.parse(fs.readFileSync(path, "utf8"));
+            console.log([r.product, r.commit.slice(0, 12), r.editorSource.revision.slice(0, 12), r.platform].join("-"));
+          ' "$GITHUB_WORKSPACE/release/BUILD.json") \
+            || { echo "::error::could not derive the release tag from BUILD.json; the published release's notes do not say it came from PR #$EDITOR_PULL_REQUEST"; exit 1; }
+          { cat release/BUILD.json; echo; echo "Built from volter-ai/editor PR #$EDITOR_PULL_REQUEST head $EDITOR_REVISION (unmerged at cut time)."; } > notes.md
+          gh release edit "$tag" --repo volter-ai/code-oss --notes-file notes.md \
+            || { echo "::error::release $tag is published but its notes do not say it came from unmerged volter-ai/editor PR #$EDITOR_PULL_REQUEST head $EDITOR_REVISION; add the line by hand"; exit 1; }
