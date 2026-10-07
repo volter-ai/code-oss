@@ -105,9 +105,15 @@ jobs:
           [[ "$repo" == volter-ai/editor ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST comes from $repo, not volter-ai/editor"; exit 1; }
           [[ "$head" == "$EDITOR_REVISION" ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST head is $head, not $EDITOR_REVISION"; exit 1; }
 
+      # The pin is read as data from git, never require()d from the tree: a FORK.json committed as a symlink to a
+      # script would otherwise run as code. A symlink's blob is its target path, which fails the parse.
       - name: Read the fork pin
         id: pin
-        run: echo "commit=$(node -p "require('./editor/packages/editor-core/workbench/FORK.json').commit")" >> "$GITHUB_OUTPUT"
+        run: |
+          commit=$(git -C editor cat-file blob "$EDITOR_REVISION:packages/editor-core/workbench/FORK.json" \
+            | node -e 'console.log(JSON.parse(require("fs").readFileSync(0, "utf8")).commit)')
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::packages/editor-core/workbench/FORK.json at $EDITOR_REVISION pins no full commit SHA"; exit 1; }
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
       - name: Check out the fork at the pin
         uses: actions/checkout@v4
@@ -140,7 +146,7 @@ jobs:
         run: |
           npm ci --ignore-scripts
           ext=node_modules/@volter/supercode-frontend-vscode/dist/extension.js
-          version=$(node -p "require('./node_modules/@volter/supercode-frontend-vscode/package.json').version")
+          version=$(node -p 'JSON.parse(require("fs").readFileSync("node_modules/@volter/supercode-frontend-vscode/package.json", "utf8")).version')
           sha=$(sha256sum "$ext" | cut -d' ' -f1)
           echo "supercode-frontend-vscode $version, dist/extension.js $sha"
           echo "FRONTEND_VERSION=$version" >> "$GITHUB_ENV"
@@ -165,7 +171,7 @@ jobs:
             fi
             echo "Chat: supercode-frontend-vscode ${FRONTEND_VERSION:-?}, dist/extension.js \`${FRONTEND_ACTUAL_SHA256:-?}\`"
             if [[ -f /mnt/wb/out/BUILD.json ]]; then
-              echo "Tarball SHA256: \`$(node -p "require('/mnt/wb/out/BUILD.json').tarballSha256")\`"
+              echo "Tarball SHA256: \`$(node -p 'JSON.parse(require("fs").readFileSync("/mnt/wb/out/BUILD.json", "utf8")).tarballSha256')\`"
               echo '```json'; cat /mnt/wb/out/BUILD.json; echo '```'
             else
               echo "No BUILD.json: the release was not cut."
@@ -200,9 +206,12 @@ jobs:
       # This job holds the write token, and build-release's `--publish` is where a release's immutability lives
       # (it refuses a tag that exists). So code that has never merged does not run here: for a pull request head
       # the script runs from editor main, and the run refuses unless the head's build-release.mjs and the helpers
-      # it imports that are its own (serial-build.mjs, runtime-notices.mjs) are byte-identical to main's. The
-      # head's FORK.json still checks the cut below. overlay.mjs is imported too but not compared: `--publish
-      # --out` reads only its TARGETS, and main's copy is the one that runs.
+      # it imports that are its own (serial-build.mjs, runtime-notices.mjs) are the same git entries as main's
+      # (mode and blob, so a symlink never passes for a file). The head's FORK.json still checks the cut below.
+      # overlay.mjs is imported too but not compared: `--publish --out` reads only its TARGETS, and main's copy
+      # is the one that runs. Nothing in this job runs in, require()s or imports from the checked-out head's
+      # tree: its files are read as git data, and the cut from the build job as data whose entries must be
+      # regular files.
       - name: Check out editor main's release script (pull request head)
         if: inputs.editor_pull_request != ''
         uses: actions/checkout@v4
@@ -217,8 +226,11 @@ jobs:
         run: |
           echo "Publishing with build-release from editor main $(git -C editor-main rev-parse HEAD)"
           for file in build-release.mjs serial-build.mjs runtime-notices.mjs; do
-            cmp -s "editor-main/scripts/workbench/$file" "editor/scripts/workbench/$file" \
-              || { echo "::error::scripts/workbench/$file at $EDITOR_REVISION differs from editor main; a pull request head is published only with main's release script"; exit 1; }
+            path="scripts/workbench/$file"
+            main_entry=$(git -C editor-main ls-tree HEAD -- "$path")
+            head_entry=$(git -C editor ls-tree "$EDITOR_REVISION" -- "$path")
+            [[ -n "$main_entry" && "$head_entry" == "$main_entry" ]] \
+              || { echo "::error::$path at $EDITOR_REVISION differs from editor main; a pull request head is published only with main's release script"; exit 1; }
           done
 
       - uses: actions/setup-node@v4
@@ -232,11 +244,15 @@ jobs:
           path: release
 
       - name: Check the cut names what was asked for
-        working-directory: editor
         run: |
-          node - "$GITHUB_WORKSPACE/release/BUILD.json" <<'EOF'
-          const record = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
-          const pin = require('./packages/editor-core/workbench/FORK.json').commit;
+          git -C editor cat-file blob "$EDITOR_REVISION:packages/editor-core/workbench/FORK.json" > "$RUNNER_TEMP/fork-pin.json"
+          node - <<'EOF'
+          const fs = require('fs');
+          for (const name of fs.readdirSync('release')) {
+            if (!fs.lstatSync(`release/${name}`).isFile()) { console.log(`::error::release/${name} from the build job is not a regular file`); process.exit(1); }
+          }
+          const record = JSON.parse(fs.readFileSync('release/BUILD.json', 'utf8'));
+          const pin = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/fork-pin.json`, 'utf8')).commit;
           const wrong = [
             ['product', record.product, process.env.PRODUCT],
             ['platform', record.platform, 'linux-x64'],
@@ -263,7 +279,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag=$(node -p "const r = require(process.argv[1]); [r.product, r.commit.slice(0, 12), r.editorSource.revision.slice(0, 12), r.platform].join('-')" "$GITHUB_WORKSPACE/release/BUILD.json") \
+          tag=$(node -e '
+            const fs = require("fs");
+            const path = process.argv[1];
+            if (!fs.lstatSync(path).isFile()) throw new Error(`${path} is not a regular file`);
+            const r = JSON.parse(fs.readFileSync(path, "utf8"));
+            console.log([r.product, r.commit.slice(0, 12), r.editorSource.revision.slice(0, 12), r.platform].join("-"));
+          ' "$GITHUB_WORKSPACE/release/BUILD.json") \
             || { echo "::error::could not derive the release tag from BUILD.json; the published release's notes do not say it came from PR #$EDITOR_PULL_REQUEST"; exit 1; }
           { cat release/BUILD.json; echo; echo "Built from volter-ai/editor PR #$EDITOR_PULL_REQUEST head $EDITOR_REVISION (unmerged at cut time)."; } > notes.md
           gh release edit "$tag" --repo volter-ai/code-oss --notes-file notes.md \
