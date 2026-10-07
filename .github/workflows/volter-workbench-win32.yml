@@ -203,8 +203,23 @@ jobs:
             exit 1
           }
           if ($growGB -gt 0) {
-            $existingMB = (Get-CimInstance Win32_PageFileUsage | Where-Object { $_.Name -like "${drive}:\*" } | Measure-Object -Property AllocatedBaseSize -Sum).Sum
-            $bytes = ([int64]$existingMB * 1MB) + ($growGB * 1GB)
+            # The added page file goes on a drive that has none. Windows refuses to resize the page file it is using
+            # (NtCreatePagingFile answered STATUS_INVALID_PARAMETER_2, 0xC00000F1, on runner provisioner 20260901.588,
+            # whose page file is on D:; 20261002.596 keeps it on C:), and a volume holds one page file. So it is the
+            # work drive when that has none, and otherwise the other drive, with room for it either way.
+            $pageDrive = $null
+            foreach ($letter in @($drive) + (@('D', 'C') | Where-Object { $_ -ne $drive })) {
+              $volume = Get-Volume -DriveLetter $letter -ErrorAction SilentlyContinue
+              if (-not $volume) { continue }
+              if (Get-CimInstance Win32_PageFileUsage | Where-Object { $_.Name -like "${letter}:\*" }) { "${letter}: already has a page file"; continue }
+              $roomGB = [math]::Floor($volume.SizeRemaining / 1GB) - $(if ($letter -eq $drive) { $cutGB } else { 0 })
+              if ($roomGB -ge $growGB) { $pageDrive = $letter; break }
+            }
+            if (-not $pageDrive) {
+              "::error::no drive without a page file has $growGB GB free for the page file this adds"
+              exit 1
+            }
+            $bytes = [int64]$growGB * 1GB
             Add-Type -TypeDefinition @'
           using System;
           using System.ComponentModel;
@@ -262,8 +277,8 @@ jobs:
               }
           }
           '@
-            $path = [VolterPagefile]::Set("${drive}:", $bytes, $bytes)
-            'page file {0} ({1}:) set to {2} GB' -f $path, $drive, ($bytes / 1GB)
+            $path = [VolterPagefile]::Set("${pageDrive}:", $bytes, $bytes)
+            'page file {0} ({1}:) set to {2} GB' -f $path, $pageDrive, ($bytes / 1GB)
           }
           $commitGB = (Get-CimInstance Win32_OperatingSystem).TotalVirtualMemorySize / 1MB
           'commit limit now {0:N1} GB' -f $commitGB
