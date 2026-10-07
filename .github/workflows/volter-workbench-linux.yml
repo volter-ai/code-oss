@@ -19,7 +19,9 @@ name: Volter workbench release (linux-x64)
 # volter-ai/editor itself (not a fork), and has `editor_revision` as its head exactly. Reviews happen off GitHub,
 # so this checks no approvals: what it pins is that the bytes are the head the reviewers were sent. The job summary
 # and the release notes then say the release was built from that pull request's head, unmerged at cut time;
-# BUILD.json, which the product pins by hash, is not touched. Left empty, the revision must be on main as before.
+# BUILD.json, which the product pins by hash, is not touched. The publish job, which holds the write token, never
+# runs the unmerged head's code: it runs build-release from editor main and refuses unless the head's copy of it
+# is the same. Left empty, the revision must be on main as before.
 
 on:
   workflow_dispatch:
@@ -195,6 +197,30 @@ jobs:
           path: editor
           persist-credentials: false
 
+      # This job holds the write token, and build-release's `--publish` is where a release's immutability lives
+      # (it refuses a tag that exists). So code that has never merged does not run here: for a pull request head
+      # the script runs from editor main, and the run refuses unless the head's build-release.mjs and the helpers
+      # it imports that are its own (serial-build.mjs, runtime-notices.mjs) are byte-identical to main's. The
+      # head's FORK.json still checks the cut below. overlay.mjs is imported too but not compared: `--publish
+      # --out` reads only its TARGETS, and main's copy is the one that runs.
+      - name: Check out editor main's release script (pull request head)
+        if: inputs.editor_pull_request != ''
+        uses: actions/checkout@v4
+        with:
+          repository: volter-ai/editor
+          ref: main
+          path: editor-main
+          persist-credentials: false
+
+      - name: Refuse a pull request head whose release script is not main's
+        if: inputs.editor_pull_request != ''
+        run: |
+          echo "Publishing with build-release from editor main $(git -C editor-main rev-parse HEAD)"
+          for file in build-release.mjs serial-build.mjs runtime-notices.mjs; do
+            cmp -s "editor-main/scripts/workbench/$file" "editor/scripts/workbench/$file" \
+              || { echo "::error::scripts/workbench/$file at $EDITOR_REVISION differs from editor main; a pull request head is published only with main's release script"; exit 1; }
+          done
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -223,19 +249,22 @@ jobs:
           EOF
 
       - name: Publish it
-        working-directory: editor
+        working-directory: ${{ inputs.editor_pull_request == '' && 'editor' || 'editor-main' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/workbench/build-release.mjs --publish --out "$GITHUB_WORKSPACE/release"
 
       # build-release uses BUILD.json as the notes. The provenance line goes after it in the notes only: the
       # BUILD.json asset, which a product reads and pins by hash, stays the bytes that were cut. The tag is
-      # build-release's own `releaseTag`, derived from BUILD.json's fields.
-      - name: Say the release came from an unmerged pull request head
+      # build-release's own `releaseTag`, derived from BUILD.json's fields. The release is already up by now, so
+      # a failure here fails the run: a release from an unmerged head must never sit there without saying so.
+      - name: Say the release came from an unmerged pull request head (fails the run if the notes are not edited)
         if: inputs.editor_pull_request != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag=$(node -p "const r = require(process.argv[1]); [r.product, r.commit.slice(0, 12), r.editorSource.revision.slice(0, 12), r.platform].join('-')" "$GITHUB_WORKSPACE/release/BUILD.json")
+          tag=$(node -p "const r = require(process.argv[1]); [r.product, r.commit.slice(0, 12), r.editorSource.revision.slice(0, 12), r.platform].join('-')" "$GITHUB_WORKSPACE/release/BUILD.json") \
+            || { echo "::error::could not derive the release tag from BUILD.json; the published release's notes do not say it came from PR #$EDITOR_PULL_REQUEST"; exit 1; }
           { cat release/BUILD.json; echo; echo "Built from volter-ai/editor PR #$EDITOR_PULL_REQUEST head $EDITOR_REVISION (unmerged at cut time)."; } > notes.md
-          gh release edit "$tag" --repo volter-ai/code-oss --notes-file notes.md
+          gh release edit "$tag" --repo volter-ai/code-oss --notes-file notes.md \
+            || { echo "::error::release $tag is published but its notes do not say it came from unmerged volter-ai/editor PR #$EDITOR_PULL_REQUEST head $EDITOR_REVISION; add the line by hand"; exit 1; }
