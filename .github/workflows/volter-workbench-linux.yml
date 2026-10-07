@@ -6,15 +6,17 @@ name: Volter workbench release (linux-x64)
 # BUILD.json as the notes). The build is the heaviest thing in the estate, so it runs here rather than on a machine
 # that is doing something else.
 #
-# It builds at the editor revision given and at the fork commit that revision pins
-# (`packages/editor-core/workbench/FORK.json`), so a run names both of its sources. build-release refuses a tag that
-# exists, so a release is never replaced. It runs only when dispatched and gates nothing.
+# It builds at an editor revision that is on volter-ai/editor's main and at the fork commit that revision pins
+# (`packages/editor-core/workbench/FORK.json`), so a run names both of its sources. The build job holds no write
+# token: it runs thousands of dependency install scripts. Only the publish job can write, and it runs nothing but
+# build-release's `--publish --out`, which re-hashes the cut against its BUILD.json and uploads it; build-release
+# refuses a tag that exists, so a release is never replaced. It runs only when dispatched and gates nothing.
 
 on:
   workflow_dispatch:
     inputs:
       editor_revision:
-        description: Full volter-ai/editor commit SHA to build
+        description: Full volter-ai/editor commit SHA to build (must be on main)
         required: true
         type: string
       product:
@@ -34,17 +36,18 @@ concurrency:
   group: volter-workbench-linux-${{ inputs.product }}-${{ inputs.editor_revision }}
   cancel-in-progress: false
 
+env:
+  EDITOR_REVISION: ${{ inputs.editor_revision }}
+  PRODUCT: ${{ inputs.product }}
+  FRONTEND_SHA256: ${{ inputs.frontend_sha256 }}
+  GIT_LFS_SKIP_SMUDGE: '1'
+
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240
     permissions:
-      contents: write
-    env:
-      EDITOR_REVISION: ${{ inputs.editor_revision }}
-      PRODUCT: ${{ inputs.product }}
-      FRONTEND_SHA256: ${{ inputs.frontend_sha256 }}
-      GIT_LFS_SKIP_SMUDGE: '1'
+      contents: read
     steps:
       - name: Check the inputs
         run: |
@@ -58,7 +61,14 @@ jobs:
           repository: volter-ai/editor
           ref: ${{ inputs.editor_revision }}
           path: editor
+          fetch-depth: 0
+          filter: blob:none
           persist-credentials: false
+
+      - name: Refuse a revision that is not on the editor's main
+        working-directory: editor
+        run: |
+          git merge-base --is-ancestor "$EDITOR_REVISION" origin/main || { echo "::error::$EDITOR_REVISION is not on volter-ai/editor main"; exit 1; }
 
       - name: Read the fork pin
         id: pin
@@ -84,6 +94,9 @@ jobs:
       - name: Make room (work on /mnt, 8 GB more swap)
         run: |
           sudo mkdir -p /mnt/wb && sudo chown "$USER" /mnt/wb
+          free_gb=$(df --output=avail -BG /mnt | tail -1 | tr -dc 0-9)
+          echo "/mnt has ${free_gb} GB free"
+          (( free_gb >= 25 )) || { echo "::error::/mnt has ${free_gb} GB free; the cut wants about 25 (8 swap plus clone, node_modules, out-build and package with room)"; exit 1; }
           sudo fallocate -l 8G /mnt/wb-swap && sudo chmod 600 /mnt/wb-swap && sudo mkswap /mnt/wb-swap && sudo swapon /mnt/wb-swap
           free -g; df -h / /mnt
 
@@ -101,13 +114,11 @@ jobs:
             echo "::error::dist/extension.js is $sha, expected $FRONTEND_SHA256"; exit 1
           fi
 
-      - name: Cut and publish the release
+      - name: Cut the release
         working-directory: editor
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           node scripts/workbench/build-release.mjs --product "$PRODUCT" --platform linux-x64 \
-            --checkout "$GITHUB_WORKSPACE/code-oss" --work /mnt/wb/work --out /mnt/wb/out --min-ram 15 --publish
+            --checkout "$GITHUB_WORKSPACE/code-oss" --work /mnt/wb/work --out /mnt/wb/out --min-ram 15
 
       - name: Summary
         if: always()
@@ -123,10 +134,43 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Keep BUILD.json with the run
-        if: always()
+      - name: Hand the cut to the publish job
         uses: actions/upload-artifact@v4
         with:
-          name: BUILD-${{ inputs.product }}-linux-x64
-          path: /mnt/wb/out/BUILD.json
-          if-no-files-found: ignore
+          name: release-${{ inputs.product }}-linux-x64
+          path: |
+            /mnt/wb/out/BUILD.json
+            /mnt/wb/out/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the editor's release script
+        uses: actions/checkout@v4
+        with:
+          repository: volter-ai/editor
+          ref: ${{ inputs.editor_revision }}
+          path: editor
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Fetch the cut
+        uses: actions/download-artifact@v4
+        with:
+          name: release-${{ inputs.product }}-linux-x64
+          path: release
+
+      - name: Publish it
+        working-directory: editor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/workbench/build-release.mjs --publish --out "$GITHUB_WORKSPACE/release"
