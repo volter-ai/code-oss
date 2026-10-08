@@ -156,10 +156,12 @@ jobs:
       - name: Check the tarball carries this revision's view Chat
         run: |
           tarball=$(ls /mnt/wb/out/*.tar.gz)
-          want=$(sha256sum editor/packages/editor-core/view/workbench/extensions/volter-view-chat/extension.js | cut -d' ' -f1)
+          # The wanted bytes are read from git at the revision, as the fork pin is, not from the working file, which
+          # the build ran beside.
+          want=$(git -C editor cat-file blob "$EDITOR_REVISION:packages/editor-core/view/workbench/extensions/volter-view-chat/extension.js" | sha256sum | cut -d' ' -f1)
           mapfile -t found < <(tar -tzf "$tarball" | grep -E '(^|/)extensions/volter-view-chat/extension\.js$' || true)
           (( ${#found[@]} == 1 )) || { echo "::error::the tarball holds ${#found[@]} files named extensions/volter-view-chat/extension.js, expected exactly one"; exit 1; }
-          got=$(tar -xzOf "$tarball" "${found[0]}" | sha256sum | cut -d' ' -f1)
+          got=$(tar -xzOf "$tarball" -- "${found[0]}" | sha256sum | cut -d' ' -f1)
           echo "volter-view-chat extension.js: ${found[0]} $got (editor checkout $want)"
           [[ "$got" == "$want" ]] || { echo "::error::${found[0]} in the tarball is $got, but the editor checkout's extension.js at $EDITOR_REVISION is $want"; exit 1; }
           echo "VIEW_CHAT_SHA256=$got" >> "$GITHUB_ENV"
