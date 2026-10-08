@@ -1,0 +1,182 @@
+name: Volter workbench cut (web)
+
+# Cuts one Volter product's WEB workbench on a GitHub-hosted runner: the static `vscode-web` package a limited view
+# ships (volter-ai/editor docs/LIMITED-VIEW.md), the same bytes `scripts/workbench/build-release.mjs --target web`
+# in volter-ai/editor cuts on a workstation. It is one package for every platform, so there is one workflow and no
+# platform input.
+#
+# It builds at an editor revision that is on volter-ai/editor's main and at the fork commit that revision pins
+# (`packages/editor-core/workbench/FORK.json`), so a run names both of its sources.
+#
+# NOTHING IS PUBLISHED. build-release refuses `--publish` for the web target: no product declares a web release, so
+# there is no tag a product would read. The cut leaves as a workflow ARTIFACT instead: the tarball and its
+# BUILD.json, which records the tarball's SHA256. Whoever builds a view cites the run id and the artifact's name,
+# downloads it, checks the hash, unpacks it, and names the `vscode-web` directory as `view build --workbench`.
+#
+# The job's token is read-only and the workflow holds no secret: it runs thousands of dependency install scripts.
+# It runs only when dispatched and gates nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      editor_revision:
+        description: Full volter-ai/editor commit SHA to build (must be on main)
+        required: true
+        type: string
+      product:
+        description: Product id (scripts/workbench/products)
+        required: true
+        default: cyclotron
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: volter-workbench-web-${{ inputs.product }}-${{ inputs.editor_revision }}
+  cancel-in-progress: false
+
+env:
+  EDITOR_REVISION: ${{ inputs.editor_revision }}
+  PRODUCT: ${{ inputs.product }}
+  GIT_LFS_SKIP_SMUDGE: '1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - name: Check the inputs
+        run: |
+          [[ "$EDITOR_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::editor_revision must be a full 40-character commit SHA"; exit 1; }
+          [[ "$PRODUCT" =~ ^[a-z0-9-]+$ ]] || { echo "::error::product must be a product id"; exit 1; }
+          # The artifact's name: the product and the editor revision's first twelve characters.
+          echo "ARTIFACT_REVISION=${EDITOR_REVISION:0:12}" >> "$GITHUB_ENV"
+
+      - name: Check out the editor
+        uses: actions/checkout@v4
+        with:
+          repository: volter-ai/editor
+          ref: ${{ inputs.editor_revision }}
+          path: editor
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Refuse a revision that is not on the editor's main
+        working-directory: editor
+        run: |
+          git merge-base --is-ancestor "$EDITOR_REVISION" origin/main || { echo "::error::$EDITOR_REVISION is not on volter-ai/editor main"; exit 1; }
+
+      # The pin is read as data from git, never require()d from the tree: a FORK.json committed as a symlink to a
+      # script would otherwise run as code. A symlink's blob is its target path, which fails the parse.
+      - name: Read the fork pin
+        id: pin
+        run: |
+          commit=$(git -C editor cat-file blob "$EDITOR_REVISION:packages/editor-core/workbench/FORK.json" \
+            | node -e 'console.log(JSON.parse(require("fs").readFileSync(0, "utf8")).commit)')
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::packages/editor-core/workbench/FORK.json at $EDITOR_REVISION pins no full commit SHA"; exit 1; }
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the fork at the pin
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pin.outputs.commit }}
+          path: code-oss
+          lfs: false
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: code-oss/.nvmrc
+
+      # The web package itself carries no native module, but the fork's own `npm ci` builds the ones its
+      # workspace declares before any target is chosen.
+      - name: Install the fork's native build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential pkg-config libx11-dev libx11-xcb-dev libxkbfile-dev libkrb5-dev
+
+      - name: Make room (work on /mnt, 8 GB more swap)
+        run: |
+          sudo mkdir -p /mnt/wb && sudo chown "$USER" /mnt/wb
+          free_gb=$(df --output=avail -BG /mnt | tail -1 | tr -dc 0-9)
+          echo "/mnt has ${free_gb} GB free"
+          (( free_gb >= 20 )) || { echo "::error::/mnt has ${free_gb} GB free; the cut wants about 20 (8 swap plus clone, node_modules and package with room)"; exit 1; }
+          sudo fallocate -l 8G /mnt/wb-swap && sudo chmod 600 /mnt/wb-swap && sudo mkswap /mnt/wb-swap && sudo swapon /mnt/wb-swap
+          free -g; df -h / /mnt
+
+      # The web target carries no supercode chat (its Chat is the view's own built-in extension, from the editor's
+      # source), so there is no frontend build to pin here as the platform workflows do.
+      - name: Install the editor
+        working-directory: editor
+        run: npm ci --ignore-scripts
+
+      - name: Cut the web workbench
+        working-directory: editor
+        run: |
+          node scripts/workbench/build-release.mjs --target web --product "$PRODUCT" \
+            --checkout "$GITHUB_WORKSPACE/code-oss" --work /mnt/wb/work --out /mnt/wb/out --min-ram 15
+
+      # The cut is read as data: every entry a regular file, and BUILD.json naming what was asked for.
+      - name: Check the cut names what was asked for
+        env:
+          FORK_PIN: ${{ steps.pin.outputs.commit }}
+        run: |
+          node - <<'EOF'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const out = '/mnt/wb/out';
+          const record = JSON.parse(fs.readFileSync(`${out}/BUILD.json`, 'utf8'));
+          const wrong = [
+            ['target', record.target, 'vscode-web'],
+            ['platform', record.platform, 'web'],
+            ['product', record.product, process.env.PRODUCT],
+            ['editorSource.revision', record.editorSource?.revision, process.env.EDITOR_REVISION],
+            ['commit', record.commit, process.env.FORK_PIN],
+          ].filter(([, got, want]) => got !== want);
+          if (typeof record.tarball !== 'string' || !/^\w[\w.-]*\.tar\.gz$/.test(record.tarball)) wrong.push(['tarball', record.tarball, 'a bare .tar.gz name']);
+          else if (!fs.lstatSync(`${out}/${record.tarball}`).isFile()) wrong.push(['tarball', record.tarball, 'a regular file']);
+          else {
+            const sha = crypto.createHash('sha256').update(fs.readFileSync(`${out}/${record.tarball}`)).digest('hex');
+            if (sha !== record.tarballSha256) wrong.push(['tarballSha256', record.tarballSha256, sha]);
+          }
+          for (const [key, got, want] of wrong) console.log(`::error::BUILD.json ${key} is ${JSON.stringify(got)}, expected ${want}`);
+          process.exit(wrong.length ? 1 : 0);
+          EOF
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### $PRODUCT web workbench at editor $EDITOR_REVISION"
+            if [[ -f /mnt/wb/out/BUILD.json ]]; then
+              echo "Artifact: \`workbench-web-$PRODUCT-${EDITOR_REVISION:0:12}\` of run $GITHUB_RUN_ID"
+              echo "Tarball SHA256: \`$(node -p 'JSON.parse(require("fs").readFileSync("/mnt/wb/out/BUILD.json", "utf8")).tarballSha256')\`"
+              echo
+              echo "Use it:"
+              echo '```sh'
+              echo "gh run download $GITHUB_RUN_ID --repo $GITHUB_REPOSITORY --name workbench-web-$PRODUCT-${EDITOR_REVISION:0:12} --dir workbench-web"
+              echo '(cd workbench-web && tar -xzf *.tar.gz)   # check the tarball against BUILD.json tarballSha256 first'
+              echo "cyclotron view build <project> --out <dir> --workbench workbench-web/vscode-web"
+              echo '```'
+              echo '```json'; cat /mnt/wb/out/BUILD.json; echo '```'
+            else
+              echo "No BUILD.json: the workbench was not cut."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The tarball, not the unpacked directory: one file whose hash BUILD.json records, where an artifact of
+      # thousands of loose files would be re-zipped by the runner with nothing to check it against.
+      - name: Keep the cut as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-web-${{ inputs.product }}-${{ env.ARTIFACT_REVISION }}
+          path: |
+            /mnt/wb/out/BUILD.json
+            /mnt/wb/out/*.tar.gz
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
