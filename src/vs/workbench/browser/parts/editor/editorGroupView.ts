@@ -548,7 +548,7 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 	}
 
 	private updateTitleContainer(): void {
-		this.titleContainer.classList.toggle('tabs', this.groupsView.partOptions.showTabs === 'multiple');
+		this.titleContainer.classList.toggle('tabs', !this._tabsHidden && this.groupsView.partOptions.showTabs === 'multiple');
 		this.titleContainer.classList.toggle('show-file-icons', this.groupsView.partOptions.showIcons);
 	}
 
@@ -2129,6 +2129,31 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 
 	//#endregion
 
+	//#region Tabs
+
+	private _tabsHidden = false;
+
+	get tabsHidden(): boolean {
+		return this._tabsHidden;
+	}
+
+	setTabsHidden(hidden: boolean): void {
+		if (this._tabsHidden === hidden) {
+			return;
+		}
+
+		this._tabsHidden = hidden;
+		this.updateTitleContainer();
+		this.titleControl.recreateTabsControl();
+		this.relayout();
+		if (this.model.activeEditor) {
+			this.titleControl.openEditors(this.model.getEditors(EditorsOrder.SEQUENTIAL));
+		}
+		this.updateStyles();
+	}
+
+	//#endregion
+
 	//#region Editor Actions
 
 	createEditorActions(disposables: DisposableStore, menuId = MenuId.EditorTitle): IActiveEditorActions {
@@ -2200,7 +2225,7 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 			this.titleContainer.style.removeProperty('--title-border-bottom-color');
 		}
 
-		const { showTabs } = this.groupsView.partOptions;
+		const showTabs = this._tabsHidden ? 'none' : this.groupsView.partOptions.showTabs;
 		this.titleContainer.style.backgroundColor = this.getColor(showTabs === 'multiple' ? EDITOR_GROUP_HEADER_TABS_BACKGROUND : EDITOR_GROUP_HEADER_NO_TABS_BACKGROUND) || '';
 
 		// Editor container

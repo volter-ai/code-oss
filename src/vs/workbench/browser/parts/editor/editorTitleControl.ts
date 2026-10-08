@@ -62,7 +62,7 @@ export class EditorTitleControl extends Themable {
 
 	private createEditorTabsControl(): IEditorTabsControl {
 		let tabsControlType;
-		switch (this.groupsView.partOptions.showTabs) {
+		switch (this.groupView.tabsHidden ? 'none' : this.groupsView.partOptions.showTabs) {
 			case 'none':
 				tabsControlType = NoEditorTabsControl;
 				break;
@@ -83,6 +83,19 @@ export class EditorTitleControl extends Themable {
 		const control = this.instantiationService.createInstance(EditorHeaderControl, this.parent, this.groupView, this.groupsView, this.menuIds, this.showHeader, this.reserveHeaderSpace);
 		this.headerControlDisposable.value = control;
 		return control;
+	}
+
+	/** Build the tabs control again, for new part options or a group's own `tabsHidden`. */
+	recreateTabsControl(): void {
+
+		// Clear old
+		this.editorTabsControlDisposable.clear();
+		this.headerControlDisposable.clear();
+		clearNode(this.parent);
+
+		// Create new
+		this.editorTabsControl = this.createEditorTabsControl();
+		this.headerControl = this.createHeaderControl();
 	}
 
 	openEditor(editor: EditorInput, options?: IInternalEditorOpenOptions): void {
@@ -170,14 +183,7 @@ export class EditorTitleControl extends Themable {
 			oldOptions.showTabs !== newOptions.showTabs ||
 			(newOptions.showTabs !== 'single' && oldOptions.pinnedTabsOnSeparateRow !== newOptions.pinnedTabsOnSeparateRow)
 		) {
-			// Clear old
-			this.editorTabsControlDisposable.clear();
-			this.headerControlDisposable.clear();
-			clearNode(this.parent);
-
-			// Create new
-			this.editorTabsControl = this.createEditorTabsControl();
-			this.headerControl = this.createHeaderControl();
+			this.recreateTabsControl();
 		}
 
 		// Forward into editor tabs control
