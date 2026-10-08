@@ -1080,6 +1080,10 @@ export interface IEditorGroup {
 	/**
 	 * Hide or show this group's own tab row.
 	 *
+	 * Unlike {@linkcode IEditorGroup.isLocked `isLocked`}, it is not saved with the
+	 * layout: a reload or restore brings every group back with its tabs, and the
+	 * caller sets it again.
+	 *
 	 * See {@linkcode IEditorGroup.tabsHidden `tabsHidden`}
 	 */
 	setTabsHidden(hidden: boolean): void;
