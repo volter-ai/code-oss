@@ -324,8 +324,12 @@ jobs:
             *) echo "::error::no ripgrep target is written down for this runner"; exit 1 ;;
           esac
           tmp=$(node -p 'require("os").tmpdir().split("\\").join("/")')
-          # Every @vscode/ripgrep version any lockfile of the fork installs, one to a line.
-          mapfile -t versions < <(git -C code-oss ls-files -z -- '*package-lock.json' | (cd code-oss && xargs -0 -r node -e '
+          # Every @vscode/ripgrep version any lockfile of the fork installs, one to a line. Read into a variable, so
+          # that a read that FAILS stops the step: "the lockfiles could not be read" must never pass for "no
+          # lockfile installs it", which would skip the fetch and leave the cut to fail on the API as before.
+          lockfiles=$(git -C code-oss ls-files -- '*package-lock.json' | wc -l | tr -d ' ') || { echo "::error::could not list the fork's lockfiles"; exit 1; }
+          (( lockfiles > 0 )) || { echo "::error::the fork checkout has no package-lock.json: this is not the tree the cut installs"; exit 1; }
+          found=$(git -C code-oss ls-files -z -- '*package-lock.json' | (cd code-oss && xargs -0 node -e '
             const fs = require("fs");
             const seen = new Set();
             for (const file of process.argv.slice(1)) {
@@ -335,8 +339,9 @@ jobs:
               }
             }
             for (const version of seen) console.log(version);
-          ' | tr -d '\r'))
-          if (( ${#versions[@]} == 0 )); then echo "no lockfile of the fork installs @vscode/ripgrep: nothing to fetch"; exit 0; fi
+          ') | tr -d '\r') || { echo "::error::could not read the fork's lockfiles for the @vscode/ripgrep versions they install"; exit 1; }
+          if [[ -z "$found" ]]; then echo "none of the fork's $lockfiles lockfiles installs @vscode/ripgrep: nothing to fetch"; exit 0; fi
+          mapfile -t versions <<< "$found"
           for version in "${versions[@]}"; do
             [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::unexpected @vscode/ripgrep version $version in a lockfile"; exit 1; }
             unpacked=$(mktemp -d)
