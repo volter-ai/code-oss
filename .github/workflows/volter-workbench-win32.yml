@@ -324,19 +324,36 @@ jobs:
             *) echo "::error::no ripgrep target is written down for this runner"; exit 1 ;;
           esac
           tmp=$(node -p 'require("os").tmpdir().split("\\").join("/")')
-          # Every @vscode/ripgrep version any lockfile of the fork installs, one to a line.
-          mapfile -t versions < <(git -C code-oss ls-files -z -- '*package-lock.json' | (cd code-oss && xargs -0 -r node -e '
+          # Every @vscode/ripgrep version any lockfile of the fork installs, one to a line. Read into a variable, so
+          # that a read that FAILS stops the step: "the lockfiles could not be read" must never pass for "no
+          # lockfile installs it", which would skip the fetch and leave the cut to fail on the API as before.
+          lockfiles=$(git -C code-oss ls-files -- '*package-lock.json' | wc -l | tr -d ' ') || { echo "::error::could not list the fork's lockfiles"; exit 1; }
+          (( lockfiles > 0 )) || { echo "::error::the fork checkout has no package-lock.json: this is not the tree the cut installs"; exit 1; }
+          found=$(git -C code-oss ls-files -z -- '*package-lock.json' | (cd code-oss && xargs -0 node -e '
             const fs = require("fs");
             const seen = new Set();
+            const isMap = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+            // The older lockfile shape: a tree of `dependencies`, each named by its package.
+            const walk = (dependencies) => {
+              for (const [name, entry] of Object.entries(dependencies)) {
+                if (!isMap(entry)) continue;
+                if (name === "@vscode/ripgrep" && typeof entry.version === "string") seen.add(entry.version);
+                if (isMap(entry.dependencies)) walk(entry.dependencies);
+              }
+            };
             for (const file of process.argv.slice(1)) {
               const lock = JSON.parse(fs.readFileSync(file, "utf8"));
-              for (const [name, entry] of Object.entries(lock.packages ?? {})) {
-                if (name.endsWith("node_modules/@vscode/ripgrep") && typeof entry.version === "string") seen.add(entry.version);
+              // A lockfile in neither shape is one this cannot read, which must not pass for "installs none".
+              if (!isMap(lock.packages) && !isMap(lock.dependencies)) throw new Error(file + " has neither a packages nor a dependencies map");
+              for (const [name, entry] of Object.entries(isMap(lock.packages) ? lock.packages : {})) {
+                if (name.endsWith("node_modules/@vscode/ripgrep") && isMap(entry) && typeof entry.version === "string") seen.add(entry.version);
               }
+              if (isMap(lock.dependencies)) walk(lock.dependencies);
             }
             for (const version of seen) console.log(version);
-          ' | tr -d '\r'))
-          if (( ${#versions[@]} == 0 )); then echo "no lockfile of the fork installs @vscode/ripgrep: nothing to fetch"; exit 0; fi
+          ') | tr -d '\r') || { echo "::error::could not read the fork's lockfiles for the @vscode/ripgrep versions they install"; exit 1; }
+          if [[ -z "$found" ]]; then echo "none of the fork's $lockfiles lockfiles installs @vscode/ripgrep: nothing to fetch"; exit 0; fi
+          mapfile -t versions <<< "$found"
           for version in "${versions[@]}"; do
             [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::unexpected @vscode/ripgrep version $version in a lockfile"; exit 1; }
             unpacked=$(mktemp -d)
@@ -348,7 +365,14 @@ jobs:
             mkdir -p "$cache"
             gh release download "$release" --repo microsoft/ripgrep-prebuilt --pattern "$asset" --dir "$cache" --clobber
             [[ -s "$cache/$asset" ]] || { echo "::error::$asset of microsoft/ripgrep-prebuilt $release was not downloaded"; exit 1; }
-            echo "ripgrep $release for @vscode/ripgrep@$version: $cache/$asset"
+            # The binary is packaged into a published cut, so the bytes are checked against the digest the release
+            # itself lists for the asset. An asset with no listed digest is refused, not trusted.
+            listed=$(gh api "repos/microsoft/ripgrep-prebuilt/releases/tags/$release" --jq ".assets[] | select(.name == \"$asset\") | .digest") \
+              || { echo "::error::could not read the digest microsoft/ripgrep-prebuilt $release lists for $asset"; exit 1; }
+            [[ "$listed" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::microsoft/ripgrep-prebuilt $release lists no SHA256 digest for $asset"; exit 1; }
+            got=$(sha256sum "$cache/$asset" | cut -d' ' -f1)
+            [[ "sha256:$got" == "$listed" ]] || { rm -f "$cache/$asset"; echo "::error::$asset is $got, but the release lists ${listed#sha256:}"; exit 1; }
+            echo "ripgrep $release for @vscode/ripgrep@$version: $cache/$asset ($listed)"
           done
 
       - name: Cut the release
