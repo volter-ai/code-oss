@@ -13,3 +13,18 @@ Volter Editor product overlays live in the separate
 [`volter-ai/editor`](https://github.com/volter-ai/editor) repository. Release
 artifacts identify both this source snapshot and the exact editor overlay used
 to build them.
+
+## Changes to Code-OSS's own source
+
+Each change the fork makes to upstream files (not build or release steps), so a
+rebase onto a newer Code-OSS can redo them as a checklist:
+
+- **An editor group can hide its own tab row** (volter-ai/code-oss#12).
+  `IEditorGroup.tabsHidden` and `setTabsHidden()` in
+  `src/vs/workbench/services/editor/common/editorGroupsService.ts`, a `Tabs`
+  region in `src/vs/workbench/browser/parts/editor/editorGroupView.ts` (with the
+  flag read in `updateTitleContainer` and `updateStyles`), the flag read in
+  `createEditorTabsControl` and the extracted `recreateTabsControl` in
+  `editorTitleControl.ts`, and the test double in
+  `src/vs/workbench/test/browser/workbenchTestServices.ts`. Used by the editor's
+  `volterDocuments.ts` for workspace areas.
