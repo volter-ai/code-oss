@@ -155,6 +155,10 @@ jobs:
       # the editor checkout, byte for byte. Exactly one such file must be in the tarball.
       - name: Check the tarball carries this revision's view Chat
         run: |
+          # Each hash is the end of a pipe. Without pipefail a failed read would hash nothing, and two failures
+          # would compare equal: so a failed pipe fails the step, and the hash of nothing is refused by name.
+          set -o pipefail
+          nothing=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
           tarball=$(ls /mnt/wb/out/*.tar.gz)
           # The wanted bytes are read from git at the revision, as the fork pin is, not from the working file, which
           # the build ran beside.
@@ -162,7 +166,9 @@ jobs:
           mapfile -t found < <(tar -tzf "$tarball" | grep -E '(^|/)extensions/volter-view-chat/extension\.js$' || true)
           (( ${#found[@]} == 1 )) || { echo "::error::the tarball holds ${#found[@]} files named extensions/volter-view-chat/extension.js, expected exactly one"; exit 1; }
           got=$(tar -xzOf "$tarball" -- "${found[0]}" | sha256sum | cut -d' ' -f1)
-          echo "volter-view-chat extension.js: ${found[0]} $got (editor checkout $want)"
+          [[ "$want" =~ ^[0-9a-f]{64}$ && "$want" != "$nothing" ]] || { echo "::error::the editor's volter-view-chat extension.js at $EDITOR_REVISION could not be read from git, or is empty"; exit 1; }
+          [[ "$got" =~ ^[0-9a-f]{64}$ && "$got" != "$nothing" ]] || { echo "::error::${found[0]} could not be read from the tarball, or is empty"; exit 1; }
+          echo "volter-view-chat extension.js: ${found[0]} $got (editor revision $want)"
           [[ "$got" == "$want" ]] || { echo "::error::${found[0]} in the tarball is $got, but the editor checkout's extension.js at $EDITOR_REVISION is $want"; exit 1; }
           echo "VIEW_CHAT_SHA256=$got" >> "$GITHUB_ENV"
 
