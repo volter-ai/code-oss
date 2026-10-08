@@ -853,6 +853,13 @@ export interface IEditorGroup {
 	readonly isLocked: boolean;
 
 	/**
+	 * Whether this group hides its own tab row while `workbench.editor.showTabs`
+	 * shows tabs. A group that always holds one fixed editor (an area beside the
+	 * main editors, such as a timeline under a viewport) has no use for a tab.
+	 */
+	readonly tabsHidden: boolean;
+
+	/**
 	 * The number of sticky editors in this group.
 	 */
 	readonly stickyCount: number;
@@ -1069,6 +1076,13 @@ export interface IEditorGroup {
 	 * See {@linkcode IEditorGroup.isLocked `isLocked`}
 	 */
 	lock(locked: boolean): void;
+
+	/**
+	 * Hide or show this group's own tab row.
+	 *
+	 * See {@linkcode IEditorGroup.tabsHidden `tabsHidden`}
+	 */
+	setTabsHidden(hidden: boolean): void;
 
 	/**
 	 * Move keyboard focus into the group.

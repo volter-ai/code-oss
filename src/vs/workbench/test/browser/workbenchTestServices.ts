@@ -1010,6 +1010,8 @@ export class TestEditorGroupView implements IEditorGroupView {
 	stickEditor(editor?: EditorInput | undefined): void { }
 	unstickEditor(editor?: EditorInput | undefined): void { }
 	lock(locked: boolean): void { }
+	tabsHidden = false;
+	setTabsHidden(hidden: boolean): void { }
 	focus(): void { }
 	get scopedContextKeyService(): IContextKeyService { throw new Error('not implemented'); }
 	setActive(_isActive: boolean): void { }
