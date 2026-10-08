@@ -155,6 +155,52 @@ jobs:
             echo "::error::dist/extension.js is $sha, expected $FRONTEND_SHA256"; exit 1
           fi
 
+      # The fork's `npm ci` runs @vscode/ripgrep's install script, which asks GitHub's API for a release with no
+      # token. From a hosted runner's shared address that is refused (403) once the address's unauthenticated
+      # allowance is spent: the web workflow's run 37739234723 failed on it. The install script looks for the
+      # download in a cache before it asks (lib/download.js, "Using cached download"), so this step puts the binary
+      # there. It holds the read-only token in its own env and runs no dependency: the package is read as data (its
+      # registry tarball, unpacked, nothing run), and the install scripts still get no token.
+      - name: Fetch ripgrep's prebuilt binary to where the fork's install looks for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          # What the install script asks for on this runner, and where it keeps a download: node's own tmpdir, as
+          # the install script reads it, spelled with forward slashes.
+          case "$(node -p 'process.platform + "-" + process.arch')" in
+            linux-x64) target=x86_64-unknown-linux-musl; extension=tar.gz ;;
+            win32-x64) target=x86_64-pc-windows-msvc; extension=zip ;;
+            *) echo "::error::no ripgrep target is written down for this runner"; exit 1 ;;
+          esac
+          tmp=$(node -p 'require("os").tmpdir().split("\\").join("/")')
+          # Every @vscode/ripgrep version any lockfile of the fork installs, one to a line.
+          mapfile -t versions < <(git -C code-oss ls-files -z -- '*package-lock.json' | (cd code-oss && xargs -0 -r node -e '
+            const fs = require("fs");
+            const seen = new Set();
+            for (const file of process.argv.slice(1)) {
+              const lock = JSON.parse(fs.readFileSync(file, "utf8"));
+              for (const [name, entry] of Object.entries(lock.packages ?? {})) {
+                if (name.endsWith("node_modules/@vscode/ripgrep") && typeof entry.version === "string") seen.add(entry.version);
+              }
+            }
+            for (const version of seen) console.log(version);
+          ' | tr -d '\r'))
+          if (( ${#versions[@]} == 0 )); then echo "no lockfile of the fork installs @vscode/ripgrep: nothing to fetch"; exit 0; fi
+          for version in "${versions[@]}"; do
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::unexpected @vscode/ripgrep version $version in a lockfile"; exit 1; }
+            unpacked=$(mktemp -d)
+            (cd "$unpacked" && npm pack "@vscode/ripgrep@$version" --ignore-scripts --silent > /dev/null && tar -xzf ./*.tgz)
+            release=$(grep -oE "^const VERSION = '[^']+'" "$unpacked/package/lib/postinstall.js" | cut -d"'" -f2)
+            [[ "$release" =~ ^v[0-9][0-9A-Za-z.-]*$ ]] || { echo "::error::could not read which ripgrep release @vscode/ripgrep@$version installs"; exit 1; }
+            asset="ripgrep-$release-$target.$extension"
+            cache="$tmp/vscode-ripgrep-cache-$version"
+            mkdir -p "$cache"
+            gh release download "$release" --repo microsoft/ripgrep-prebuilt --pattern "$asset" --dir "$cache" --clobber
+            [[ -s "$cache/$asset" ]] || { echo "::error::$asset of microsoft/ripgrep-prebuilt $release was not downloaded"; exit 1; }
+            echo "ripgrep $release for @vscode/ripgrep@$version: $cache/$asset"
+          done
+
       - name: Cut the release
         working-directory: editor
         run: |
