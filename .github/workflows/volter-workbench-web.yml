@@ -136,6 +136,9 @@ jobs:
             ['product', record.product, process.env.PRODUCT],
             ['editorSource.revision', record.editorSource?.revision, process.env.EDITOR_REVISION],
             ['commit', record.commit, process.env.FORK_PIN],
+            // As build-release's own publish path requires: the editor tree the cut was made from had no change
+            // the revision does not name.
+            ['editorSource.dirty', record.editorSource?.dirty, false],
           ].filter(([, got, want]) => got !== want);
           if (typeof record.tarball !== 'string' || !/^\w[\w.-]*\.tar\.gz$/.test(record.tarball)) wrong.push(['tarball', record.tarball, 'a bare .tar.gz name']);
           else if (!fs.lstatSync(`${out}/${record.tarball}`).isFile()) wrong.push(['tarball', record.tarball, 'a regular file']);
@@ -147,6 +150,20 @@ jobs:
           process.exit(wrong.length ? 1 : 0);
           EOF
 
+      # The one fact this workflow exists to deliver: the Chat a view ships is the editor revision's own. The
+      # extension is plain JavaScript that the build copies as it is, so the file in the tarball must be the file in
+      # the editor checkout, byte for byte. Exactly one such file must be in the tarball.
+      - name: Check the tarball carries this revision's view Chat
+        run: |
+          tarball=$(ls /mnt/wb/out/*.tar.gz)
+          want=$(sha256sum editor/packages/editor-core/view/workbench/extensions/volter-view-chat/extension.js | cut -d' ' -f1)
+          mapfile -t found < <(tar -tzf "$tarball" | grep -E '(^|/)extensions/volter-view-chat/extension\.js$' || true)
+          (( ${#found[@]} == 1 )) || { echo "::error::the tarball holds ${#found[@]} files named extensions/volter-view-chat/extension.js, expected exactly one"; exit 1; }
+          got=$(tar -xzOf "$tarball" "${found[0]}" | sha256sum | cut -d' ' -f1)
+          echo "volter-view-chat extension.js: ${found[0]} $got (editor checkout $want)"
+          [[ "$got" == "$want" ]] || { echo "::error::${found[0]} in the tarball is $got, but the editor checkout's extension.js at $EDITOR_REVISION is $want"; exit 1; }
+          echo "VIEW_CHAT_SHA256=$got" >> "$GITHUB_ENV"
+
       - name: Summary
         if: always()
         run: |
@@ -155,6 +172,9 @@ jobs:
             if [[ -f /mnt/wb/out/BUILD.json ]]; then
               echo "Artifact: \`workbench-web-$PRODUCT-${EDITOR_REVISION:0:12}\` of run $GITHUB_RUN_ID"
               echo "Tarball SHA256: \`$(node -p 'JSON.parse(require("fs").readFileSync("/mnt/wb/out/BUILD.json", "utf8")).tarballSha256')\`"
+              # BUILD.json's chatExtension version is the extension's fixed manifest version: it does not tell two
+              # cuts apart. The editor revision does, and this hash of the file itself.
+              echo "View Chat (volter-view-chat extension.js) SHA256: \`${VIEW_CHAT_SHA256:-not checked}\`; its version in BUILD.json is fixed, so the editor revision and this hash are what tell two cuts apart"
               echo
               echo "Use it:"
               echo '```sh'
