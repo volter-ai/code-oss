@@ -38,6 +38,7 @@ export function observableMemento<T>(opts: IObservableMementoOpts<T>) {
 export class ObservableMemento<T> extends ObservableValue<T> implements IDisposable {
 	private readonly _store = new DisposableStore();
 	private _noStorageUpdateNeeded = false;
+	private _storedValue: string | undefined;
 
 	constructor(
 		private readonly opts: IObservableMementoOpts<T>,
@@ -45,8 +46,7 @@ export class ObservableMemento<T> extends ObservableValue<T> implements IDisposa
 		private readonly storageTarget: StorageTarget,
 		@IStorageService private readonly storageService: IStorageService,
 	) {
-		const getStorageValue = (): T => {
-			const fromStorage = storageService.get(opts.key, storageScope);
+		const getStorageValue = (fromStorage: string | undefined): T => {
 			if (fromStorage !== undefined) {
 				try {
 					return opts.fromStorage(fromStorage);
@@ -57,15 +57,25 @@ export class ObservableMemento<T> extends ObservableValue<T> implements IDisposa
 			return opts.defaultValue;
 		};
 
-		const initialValue = getStorageValue();
+		const storedValue = storageService.get(opts.key, storageScope);
+		const initialValue = getStorageValue(storedValue);
 		super(new DebugNameData(undefined, `storage/${opts.key}`, undefined), initialValue, strictEquals, DebugLocation.ofCaller());
+
+		this._storedValue = storedValue;
 
 		const didChange = storageService.onDidChangeValue(storageScope, opts.key, this._store);
 		this._store.add(didChange((e) => {
-			if (e.external && e.key === opts.key) {
+			if (e.key === opts.key) {
+				const storedValue = storageService.get(opts.key, storageScope);
+				if (storedValue === this._storedValue) {
+					return;
+				}
+				// Sibling mementos share local storage too. Remember its bytes before
+				// notifying observers so neither sibling updates nor our own writes echo.
+				this._storedValue = storedValue;
 				this._noStorageUpdateNeeded = true;
 				try {
-					this.set(getStorageValue(), undefined);
+					this.set(getStorageValue(storedValue), undefined);
 				} finally {
 					this._noStorageUpdateNeeded = false;
 				}
@@ -76,10 +86,20 @@ export class ObservableMemento<T> extends ObservableValue<T> implements IDisposa
 	protected override _setValue(newValue: T): void {
 		super._setValue(newValue);
 		if (this._noStorageUpdateNeeded) {
+			// Only the incoming storage value skips persistence. Observer changes
+			// during its notification must still be stored.
+			this._noStorageUpdateNeeded = false;
 			return;
 		}
 		const valueToStore = this.opts.toStorage(this.get());
-		this.storageService.store(this.opts.key, valueToStore, this.storageScope, this.storageTarget);
+		const previousStoredValue = this._storedValue;
+		this._storedValue = valueToStore;
+		try {
+			this.storageService.store(this.opts.key, valueToStore, this.storageScope, this.storageTarget);
+		} catch (error) {
+			this._storedValue = previousStoredValue;
+			throw error;
+		}
 	}
 
 	dispose(): void {
