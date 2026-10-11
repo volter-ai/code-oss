@@ -2981,6 +2981,7 @@ export namespace ChatToolInvocationPart {
 				toolCallId: part.toolCallId,
 				toolName: part.toolName,
 				isComplete: !!part.isComplete,
+				isError: part.isError,
 				invocationMessage: part.invocationMessage ? MarkdownString.from(part.invocationMessage) : undefined,
 				pastTenseMessage: part.pastTenseMessage ? MarkdownString.from(part.pastTenseMessage) : undefined,
 				toolSpecificData,
@@ -3000,7 +3001,7 @@ export namespace ChatToolInvocationPart {
 			isConfirmed: part.isConfirmed,
 			isComplete: true,
 			source: ToolDataSource.External,
-			// isError: part.isError ?? false,
+			isError: part.isError,
 			toolSpecificData,
 			resultDetails,
 			presentation,
@@ -3149,6 +3150,9 @@ export namespace ChatToolInvocationPart {
 		}
 		if (part.isComplete !== undefined) {
 			toolInvocation.isComplete = part.isComplete;
+		}
+		if (part.isError !== undefined) {
+			toolInvocation.isError = part.isError;
 		}
 		if (part.toolSpecificData) {
 			toolInvocation.toolSpecificData = convertFromInternalToolSpecificData(part.toolSpecificData);

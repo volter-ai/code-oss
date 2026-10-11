@@ -1116,7 +1116,7 @@ export class Response extends AbstractResponse implements IDisposable {
 				existingInvocation.didExecuteTool({
 					content: [],
 					toolResultMessage: progress.pastTenseMessage,
-					toolResultError: progress.errorMessage,
+					toolResultError: progress.errorMessage || progress.isError,
 					toolResultDetails: progress.resultDetails
 				});
 			}
@@ -1153,7 +1153,7 @@ export class Response extends AbstractResponse implements IDisposable {
 			invocation.didExecuteTool({
 				content: [],
 				toolResultMessage: progress.pastTenseMessage,
-				toolResultError: progress.errorMessage,
+				toolResultError: progress.errorMessage || progress.isError,
 				toolResultDetails: progress.resultDetails
 			});
 		}
