@@ -3539,6 +3539,7 @@ export class ChatToolInvocationPart {
 	toolName: string;
 	toolCallId: string;
 	errorMessage?: string;
+	isError?: boolean;
 	invocationMessage?: string | vscode.MarkdownString;
 	originMessage?: string | vscode.MarkdownString;
 	pastTenseMessage?: string | vscode.MarkdownString;
