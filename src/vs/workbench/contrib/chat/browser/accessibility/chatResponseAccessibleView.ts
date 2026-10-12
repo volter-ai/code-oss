@@ -207,7 +207,8 @@ export function getToolInvocationA11yDescription(
 	pastTenseMessage: string | undefined,
 	toolSpecificData: ToolSpecificData | undefined,
 	resultDetails: ResultDetails | undefined,
-	isComplete: boolean
+	isComplete: boolean,
+	isError: boolean = false
 ): string {
 	const parts: string[] = [];
 
@@ -221,9 +222,9 @@ export function getToolInvocationA11yDescription(
 		parts.push(toolDataDesc);
 	}
 
-	if (isComplete && resultDetails) {
+	if (isComplete) {
 		const details = getResultDetailsDescription(resultDetails);
-		if (details.isError) {
+		if (isError || details.isError) {
 			parts.unshift(localize('errored', "Errored"));
 		}
 		if (details.input && !toolDataDesc) {
@@ -461,7 +462,8 @@ export function getChatResponsePlaintextParts(item: IChatResponseViewModel, incl
 						part.pastTenseMessage ? renderChatMessageAsPlaintext(part.pastTenseMessage) : undefined,
 						part.toolSpecificData,
 						resultDetails,
-						isComplete
+						isComplete,
+						IChatToolInvocation.isError(part)
 					);
 					if (description) {
 						contentParts.push({ partIndex, text: description });
@@ -475,7 +477,8 @@ export function getChatResponsePlaintextParts(item: IChatResponseViewModel, incl
 					part.pastTenseMessage ? renderChatMessageAsPlaintext(part.pastTenseMessage) : undefined,
 					part.toolSpecificData,
 					part.resultDetails,
-					part.isComplete
+					part.isComplete,
+					IChatToolInvocation.isError(part)
 				);
 				if (description) {
 					contentParts.push({ partIndex, text: description });
