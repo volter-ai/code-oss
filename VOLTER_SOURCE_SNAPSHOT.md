@@ -23,8 +23,8 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   t_9a9c2a9c; Articles 5/9). `ObservableMemento` currently refreshes only on
   external storage events. Chat's view, editor and quick composer each hold
   a memento for `chat.untitledInputState`, so one accepting a prompt and
-  clearing storage leaves another caching that sent text. Refresh every
-  memento for changes to its key, distinguishing its own write by the stored
+  clearing storage leaves another caching that sent text. Every memento now
+  observes changes to its key, distinguishing its own write by the stored
   serialized value. Genuine unsent drafts remain persisted. This source
   mechanism is established by reading; its connection to the reported
   Windows restart incident and its runtime correction remain unmeasured.

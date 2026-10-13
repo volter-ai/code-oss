@@ -38,6 +38,7 @@ export function observableMemento<T>(opts: IObservableMementoOpts<T>) {
 export class ObservableMemento<T> extends ObservableValue<T> implements IDisposable {
 	private readonly _store = new DisposableStore();
 	private _noStorageUpdateNeeded = false;
+	private _lastStoredValue: string | undefined;
 
 	constructor(
 		private readonly opts: IObservableMementoOpts<T>,
@@ -45,8 +46,7 @@ export class ObservableMemento<T> extends ObservableValue<T> implements IDisposa
 		private readonly storageTarget: StorageTarget,
 		@IStorageService private readonly storageService: IStorageService,
 	) {
-		const getStorageValue = (): T => {
-			const fromStorage = storageService.get(opts.key, storageScope);
+		const getStorageValue = (fromStorage: string | undefined): T => {
 			if (fromStorage !== undefined) {
 				try {
 					return opts.fromStorage(fromStorage);
@@ -57,15 +57,24 @@ export class ObservableMemento<T> extends ObservableValue<T> implements IDisposa
 			return opts.defaultValue;
 		};
 
-		const initialValue = getStorageValue();
+		const storedValue = storageService.get(opts.key, storageScope);
+		const initialValue = getStorageValue(storedValue);
 		super(new DebugNameData(undefined, `storage/${opts.key}`, undefined), initialValue, strictEquals, DebugLocation.ofCaller());
+		this._lastStoredValue = storedValue;
 
 		const didChange = storageService.onDidChangeValue(storageScope, opts.key, this._store);
 		this._store.add(didChange((e) => {
-			if (e.external && e.key === opts.key) {
+			if (e.key === opts.key) {
+				const storedValue = storageService.get(opts.key, storageScope);
+				// Another local memento can change this key too. Ignore our own write by
+				// its serialized value, including a delayed notification, not its origin.
+				if (storedValue === this._lastStoredValue) {
+					return;
+				}
+				this._lastStoredValue = storedValue;
 				this._noStorageUpdateNeeded = true;
 				try {
-					this.set(getStorageValue(), undefined);
+					this.set(getStorageValue(storedValue), undefined);
 				} finally {
 					this._noStorageUpdateNeeded = false;
 				}
@@ -79,6 +88,7 @@ export class ObservableMemento<T> extends ObservableValue<T> implements IDisposa
 			return;
 		}
 		const valueToStore = this.opts.toStorage(this.get());
+		this._lastStoredValue = valueToStore;
 		this.storageService.store(this.opts.key, valueToStore, this.storageScope, this.storageTarget);
 	}
 
