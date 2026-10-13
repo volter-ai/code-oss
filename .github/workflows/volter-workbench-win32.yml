@@ -14,6 +14,8 @@ name: Volter workbench release (win32-x64)
 # runs nothing but build-release's `--publish --out`, which re-hashes the cut against its BUILD.json and uploads it;
 # build-release refuses a tag that exists, so a release is never replaced. It runs only when dispatched and gates
 # nothing.
+# Set publish_release=false to retain BUILD.json and the archive as a seven-day CI artifact without
+# entering the write-permission publication job. The default preserves existing release dispatches.
 #
 # `editor_pull_request` is the one way past the main rule, and it is narrow. A change that renames a product (or
 # adds one) cannot merge until it pins that product's workbench releases, and those releases record which product
@@ -66,6 +68,11 @@ on:
         required: true
         default: model-editor
         type: string
+      publish_release:
+        description: Publish the cut as a GitHub Release (false retains only the CI build artifact)
+        required: false
+        default: true
+        type: boolean
       frontend_sha256:
         description: Optional SHA256 the installed @volter/supercode-frontend-vscode dist/extension.js must have
         required: false
@@ -406,7 +413,7 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Hand the cut to the publish job
+      - name: Retain the cut (BUILD.json and archive)
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ inputs.product }}-win32-x64
@@ -417,6 +424,7 @@ jobs:
           retention-days: 7
 
   publish:
+    if: inputs.publish_release
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
