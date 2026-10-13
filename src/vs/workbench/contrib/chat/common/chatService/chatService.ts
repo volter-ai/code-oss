@@ -35,7 +35,7 @@ import { HookTypeValue } from '../promptSyntax/hookTypes.js';
 import { ICustomizationMigrationHint } from '../promptSyntax/service/customizationMigrationService.js';
 import { IParsedChatRequest } from '../requestParser/chatParserTypes.js';
 import { IChatParserContext } from '../requestParser/chatRequestParser.js';
-import { IPreparedToolInvocation, IToolConfirmationMessages, IToolResult, IToolResultInputOutputDetails, ToolDataSource } from '../tools/languageModelToolsService.js';
+import { IPreparedToolInvocation, isToolResultInputOutputDetails, IToolConfirmationMessages, IToolResult, IToolResultInputOutputDetails, ToolDataSource } from '../tools/languageModelToolsService.js';
 import { ConfirmationOptionKind, type McpOAuthClient } from '../../../../../platform/agentHost/common/state/protocol/state.js';
 
 export interface IChatRequest {
@@ -953,6 +953,7 @@ export namespace IChatToolInvocation {
 		type: StateKind.Completed;
 		postConfirmed: ConfirmedReason | undefined;
 		contentForModel: IToolResult['content'];
+		isError?: boolean;
 	}
 
 	interface IChatToolInvocationCancelledState extends IChatToolInvocationStateBase, IChatToolInvocationPostStreamState {
@@ -1085,6 +1086,16 @@ export namespace IChatToolInvocation {
 		return state.type === StateKind.Completed || state.type === StateKind.Cancelled;
 	}
 
+	/** Whether the completed tool reported failure, including older input/output history. */
+	export function isError(invocation: IChatToolInvocation | IChatToolInvocationSerialized, reader?: IReader): boolean {
+		if (invocation.kind === 'toolInvocationSerialized') {
+			return !!invocation.isError || (isToolResultInputOutputDetails(invocation.resultDetails) && !!invocation.resultDetails.isError);
+		}
+
+		const state = invocation.state.read(reader);
+		return state.type === StateKind.Completed && (!!state.isError || (isToolResultInputOutputDetails(state.resultDetails) && !!state.resultDetails.isError));
+	}
+
 	export function isEffectivelyHidden(invocation: IChatToolInvocation | IChatToolInvocationSerialized, reader?: IReader): boolean {
 		if (invocation.presentation === 'hidden') {
 			return true;
@@ -1161,6 +1172,7 @@ export interface IChatToolInvocationSerialized {
 	isComplete: boolean;
 	toolCallId: string;
 	toolId: string;
+	isError?: boolean;
 	readonly icon?: undefined;
 	source: ToolDataSource | undefined; // undefined on pre-1.104 versions
 	readonly subAgentInvocationId?: string;
@@ -1229,6 +1241,7 @@ export interface IChatExternalToolInvocationUpdate {
 	toolName: string;
 	isComplete: boolean;
 	errorMessage?: string;
+	isError?: boolean;
 	invocationMessage?: string | IMarkdownString;
 	pastTenseMessage?: string | IMarkdownString;
 	toolSpecificData?: IChatTerminalToolInvocationData | IChatToolInputInvocationData | IChatExtensionsContent | IChatTodoListContent | IChatSubagentToolInvocationData | IChatModifiedFilesConfirmationData;

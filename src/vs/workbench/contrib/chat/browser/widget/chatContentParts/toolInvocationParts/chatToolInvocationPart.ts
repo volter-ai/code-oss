@@ -324,7 +324,7 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 				this.toolInvocation.pastTenseMessage ?? this.toolInvocation.invocationMessage,
 				this.toolInvocation.originMessage,
 				this.toolInvocation.toolSpecificData,
-				false,
+				IChatToolInvocation.isError(this.toolInvocation),
 			);
 		}
 
@@ -349,7 +349,7 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 				resultDetails.input,
 				resultDetails.inputLanguage,
 				resultDetails.output,
-				!!resultDetails.isError,
+				IChatToolInvocation.isError(this.toolInvocation),
 			);
 		}
 

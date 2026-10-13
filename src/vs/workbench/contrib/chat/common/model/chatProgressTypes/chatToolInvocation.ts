@@ -346,6 +346,7 @@ export class ChatToolInvocation implements IChatToolInvocation {
 
 		this._state.set({
 			type: IChatToolInvocation.StateKind.Completed,
+			isError: !!result?.toolResultError,
 			confirmed: IChatToolInvocation.executionConfirmedOrDenied(this) || { type: ToolConfirmKind.ConfirmationNotNeeded },
 			resultDetails: result?.toolResultDetails,
 			postConfirmed,
@@ -446,6 +447,7 @@ export class ChatToolInvocation implements IChatToolInvocation {
 			originMessage: this.originMessage,
 			isConfirmed: waitingForPostApproval ? { type: ToolConfirmKind.Skipped } : IChatToolInvocation.executionConfirmedOrDenied(this),
 			isComplete: true,
+			isError: IChatToolInvocation.isError(this),
 			source: this.source,
 			resultDetails: isToolResultOutputDetails(details)
 				? { output: { type: 'data', mimeType: details.output.mimeType, base64Data: encodeBase64(details.output.value) } }

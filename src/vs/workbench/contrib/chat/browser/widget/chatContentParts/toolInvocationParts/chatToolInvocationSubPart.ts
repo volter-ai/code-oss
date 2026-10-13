@@ -39,7 +39,7 @@ export abstract class BaseChatToolInvocationSubPart extends Disposable {
 			return Codicon.circleSlash;
 		}
 
-		return confirmState?.type === ToolConfirmKind.Denied ?
+		return confirmState?.type === ToolConfirmKind.Denied || IChatToolInvocation.isError(toolInvocation) ?
 			Codicon.error :
 			IChatToolInvocation.isComplete(toolInvocation) ?
 				Codicon.check : ThemeIcon.modify(Codicon.loading, 'spin');
