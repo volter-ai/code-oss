@@ -37,7 +37,7 @@ on:
       product:
         description: Product id (scripts/workbench/products)
         required: true
-        default: model-editor
+        default: cyclotron
         type: string
       frontend_sha256:
         description: Optional SHA256 the installed @volter/supercode-frontend-vscode dist/extension.js must have
