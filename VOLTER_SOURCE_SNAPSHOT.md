@@ -19,6 +19,16 @@ to build them.
 Each change the fork makes to upstream files (not build or release steps), so a
 rebase onto a newer Code-OSS can redo them as a checklist:
 
+- **Shared draft caches must observe local clears** (t_00c3b80f, editor arc
+  t_9a9c2a9c; Articles 5/9). `ObservableMemento` currently refreshes only on
+  external storage events. Chat's view, editor and quick composer each hold
+  a memento for `chat.untitledInputState`, so one accepting a prompt and
+  clearing storage leaves another caching that sent text. Refresh every
+  memento for changes to its key, distinguishing its own write by the stored
+  serialized value. Genuine unsent drafts remain persisted. This source
+  mechanism is established by reading; its connection to the reported
+  Windows restart incident and its runtime correction remain unmeasured.
+
 - **An editor group can hide its own tab row** (volter-ai/code-oss#12).
   `IEditorGroup.tabsHidden` and `setTabsHidden()` in
   `src/vs/workbench/services/editor/common/editorGroupsService.ts`, a `Tabs`
