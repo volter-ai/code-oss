@@ -14,6 +14,11 @@ Volter Editor product overlays live in the separate
 artifacts identify both this source snapshot and the exact editor overlay used
 to build them.
 
+The Windows cut's artifact-only dispatch is documented beside its inputs in
+[the workflow](.github/workflows/volter-workbench-win32.yml). Building and
+publishing are separate operations; a retained artifact establishes neither
+publication nor editor behavior.
+
 ## Changes to Code-OSS's own source
 
 Each change the fork makes to upstream files (not build or release steps), so a
