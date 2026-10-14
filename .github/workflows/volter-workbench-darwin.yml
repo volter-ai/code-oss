@@ -57,13 +57,13 @@ jobs:
   build:
     runs-on: macos-15-xlarge
     timeout-minutes: 240
-    env:
-      WORKBENCH_ROOT: ${{ runner.temp }}/volter-workbench
     permissions:
       contents: read
     steps:
       - name: Check the inputs
         run: |
+          [[ "$RUNNER_ENVIRONMENT" == github-hosted ]] || { echo "::error::this native cut requires the disposable GitHub-hosted image"; exit 1; }
+          echo "WORKBENCH_ROOT=$RUNNER_TEMP/volter-workbench" >> "$GITHUB_ENV"
           [[ "$EDITOR_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::editor_revision must be a full 40-character commit SHA"; exit 1; }
           [[ -z "$EDITOR_PULL_REQUEST" || "$EDITOR_PULL_REQUEST" =~ ^[1-9][0-9]*$ ]] || { echo "::error::editor_pull_request must be a pull request number"; exit 1; }
           [[ "$PRODUCT" =~ ^[a-z0-9-]+$ ]] || { echo "::error::product must be a product id"; exit 1; }
