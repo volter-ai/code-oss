@@ -1,0 +1,176 @@
+{
+	"name": "supercode-frontend-vscode",
+	"displayName": "Volter Harness",
+	"version": "0.1.51",
+	"type": "module",
+	"description": "VS Code chat-view frontend for an existing Volter Harness SDK runtime",
+	"publisher": "volter-ai-dev",
+	"icon": "media/icon.png",
+	"main": "./dist/extension.js",
+	"exports": {
+		"types": "./dist/index.d.ts",
+		"import": "./dist/index.js"
+	},
+	"types": "./dist/index.d.ts",
+	"engines": {
+		"node": ">=20",
+		"vscode": "^1.138.0"
+	},
+	"categories": [
+		"Chat",
+		"Other"
+	],
+	"extensionKind": [
+		"workspace",
+		"ui"
+	],
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"enabledApiProposals": [
+		"defaultChatParticipant",
+		"chatParticipantPrivate",
+		"chatParticipantAdditions",
+		"chatSessionsProvider",
+		"chatProvider"
+	],
+	"contributes": {
+		"chatParticipants": [
+			{
+				"id": "supercode.chat",
+				"name": "supercode",
+				"fullName": "Assistant",
+				"description": "Ask a question or describe a task",
+				"when": "!supercodeChatDefaultParticipant",
+				"sampleRequest": "list the files here"
+			},
+			{
+				"id": "supercode.chat.default",
+				"name": "supercode",
+				"fullName": "Assistant",
+				"description": "Ask a question or describe a task",
+				"isDefault": true,
+				"sampleRequest": "list the files here",
+				"locations": [
+					"panel"
+				],
+				"modes": [
+					"agent",
+					"ask"
+				]
+			}
+		],
+		"chatSessions": [
+			{
+				"type": "supercode",
+				"name": "supercode-runtime",
+				"displayName": "Supercode",
+				"description": "Conversations with your AI assistant",
+				"icon": "$(server-process)",
+				"welcomeTitle": "Chat",
+				"welcomeMessage": "Work with your coding agent.",
+				"inputPlaceholder": "Ask a question or describe a task",
+				"order": 1,
+				"capabilities": {
+					"supportsFileAttachments": true,
+					"supportsToolAttachments": false,
+					"supportsImageAttachments": false
+				},
+				"canDelegate": false,
+				"supportsAutoModel": false,
+				"requiresCustomModels": true
+			}
+		],
+		"commands": [
+			{
+				"command": "supercode.frontend.setToken",
+				"title": "Set Runtime Token",
+				"category": "Volter Harness"
+			},
+			{
+				"command": "supercode.frontend.connect",
+				"title": "Attach to Runtime",
+				"category": "Volter Harness"
+			},
+			{
+				"command": "supercode.frontend.disconnect",
+				"title": "Detach from Runtime",
+				"category": "Volter Harness"
+			},
+			{
+				"command": "supercode.frontend.status",
+				"title": "Show Runtime Status",
+				"category": "Volter Harness"
+			},
+			{
+				"command": "supercode.frontend.newSession",
+				"title": "New Volter Harness Runtime Session",
+				"category": "Volter Harness",
+				"icon": "$(server-process)"
+			},
+			{
+				"command": "supercode.frontend.respond",
+				"title": "Answer Runtime Request",
+				"category": "Volter Harness",
+				"enablement": "false"
+			},
+			{
+				"command": "supercode.frontend.configure",
+				"title": "New Chat: Choose Agent",
+				"category": "Chat",
+				"icon": "$(add)"
+			},
+			{
+				"command": "supercode.frontend.configureModel",
+				"title": "Model and Reasoning: Open New Chat",
+				"category": "Chat"
+			}
+		],
+		"configuration": {
+			"title": "Volter Harness",
+			"properties": {
+				"supercode.frontend.baseUrl": {
+					"type": "string",
+					"default": "",
+					"description": "Base URL of an already-running Volter Harness SDK runtime (`supercode serve` prints it). The runtime credential is NEVER a setting — run `Volter Harness: Set Runtime Token`, which stores it in SecretStorage."
+				},
+				"supercode.frontend.permissions": {
+					"type": "array",
+					"default": [
+						"observe"
+					],
+					"items": {
+						"type": "string",
+						"enum": [
+							"observe",
+							"interact",
+							"approve",
+							"terminate"
+						]
+					},
+					"description": "Permissions to request when attaching. `observe` is always included; every control is still rendered only when the runtime's own descriptor advertises the matching action."
+				}
+			}
+		},
+		"menus": {
+			"chatSessions/newSession": [
+				{
+					"command": "supercode.frontend.newSession",
+					"when": "chatSessionType == supercode"
+				}
+			]
+		},
+		"languageModelChatProviders": [
+			{
+				"vendor": "supercode-runtime",
+				"displayName": "Runtime models"
+			}
+		]
+	},
+	"supercodeFrontendContract": {
+		"name": "@volter/supercode-frontend",
+		"version": "0.2.9",
+		"mode": "generated-artifact"
+	},
+	"license": "MIT OR Apache-2.0"
+}

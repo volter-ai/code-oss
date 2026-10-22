@@ -610,6 +610,9 @@ function prepareCopilotRipgrepShimTaskREH(platform: string, arch: string, destin
 		const nodeModulesDir = path.join(outputDir, 'node_modules');
 
 		const builtInCopilotExtensionDir = path.join(outputDir, 'extensions', 'copilot');
+		// VOLTER (overlaid tier — scripts/workbench/overlay.mjs): extensions/copilot is not in
+		// this release, so there is no built-in Copilot SDK to shim. VOLTER_NO_BUILTIN_COPILOT.
+		if (!fs.existsSync(builtInCopilotExtensionDir)) { return; }
 		prepareBuiltInCopilotRipgrepShim(platform, arch, builtInCopilotExtensionDir, nodeModulesDir);
 	};
 }
@@ -666,9 +669,9 @@ function tweakProductForServerWeb(product: typeof import('../product.json')) {
 				prepareCopilotRipgrepShimTaskREH(platform, arch, destinationFolderName)
 			];
 
-			if (platform === 'win32') {
-				packageTasks.push(patchWin32DependenciesTask(destinationFolderName));
-			}
+			// VOLTER (overlaid tier — scripts/workbench/overlay.mjs): no signing service re-signs
+			// this release, so win32 binaries keep their published bytes (patchWin32Dependencies).
+			void patchWin32DependenciesTask;
 
 			const serverTaskCI = task.define(`vscode-${type}${dashed(platform)}${dashed(arch)}${dashed(minified)}-ci`, task.series(...packageTasks));
 			task.task(serverTaskCI);

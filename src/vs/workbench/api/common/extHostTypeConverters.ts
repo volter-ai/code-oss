@@ -3239,9 +3239,17 @@ export namespace ChatResponseCommandButtonPart {
 	export function from(part: vscode.ChatResponseCommandButtonPart, commandsConverter: CommandsConverter, commandDisposables: DisposableStore): Dto<IChatCommandButton> {
 		// If the command isn't in the converter, then this session may have been restored, and the command args don't exist anymore
 		const command = commandsConverter.toInternal(part.value, commandDisposables) ?? { command: part.value.command, title: part.value.title };
+		const answer = part.value.command === 'supercode.frontend.respond' ? part.value.arguments?.[0] : undefined;
+		const harnessAnswerGroup = answer && typeof answer === 'object' && !Array.isArray(answer)
+			&& typeof answer.connectionId === 'string' && answer.connectionId.length > 0 && answer.connectionId.length <= 256
+			&& Number.isSafeInteger(answer.requestId) && answer.requestId >= 0
+			&& answer.response && typeof answer.response === 'object' && !Array.isArray(answer.response)
+			&& answer.response.request_id === answer.requestId
+			? JSON.stringify([answer.connectionId, answer.requestId]) : undefined;
 		return {
 			kind: 'command',
-			command
+			command,
+			harnessAnswerGroup
 		};
 	}
 	export function to(part: Dto<IChatCommandButton>, commandsConverter: CommandsConverter): vscode.ChatResponseCommandButtonPart {

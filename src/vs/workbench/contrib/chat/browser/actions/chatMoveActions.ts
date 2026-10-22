@@ -23,6 +23,7 @@ import { ChatEditor, IChatEditorOptions } from '../widgetHosts/editor/chatEditor
 import { ChatEditorInput } from '../widgetHosts/editor/chatEditorInput.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
 import { CHAT_CATEGORY } from './chatActions.js';
+import { IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
 
 enum MoveToNewLocation {
 	Editor = 'Editor',
@@ -49,7 +50,7 @@ export function registerMoveActions() {
 
 		async run(accessor: ServicesAccessor, ...args: unknown[]) {
 			const context = args[0];
-			executeMoveToAction(accessor, MoveToNewLocation.Editor, isChatViewTitleActionContext(context) ? context.sessionResource : undefined);
+			return executeMoveToAction(accessor, MoveToNewLocation.Editor, isChatViewTitleActionContext(context) ? context.sessionResource : undefined);
 		}
 	});
 
@@ -72,7 +73,7 @@ export function registerMoveActions() {
 
 		async run(accessor: ServicesAccessor, ...args: unknown[]) {
 			const context = args[0];
-			executeMoveToAction(accessor, MoveToNewLocation.Window, isChatViewTitleActionContext(context) ? context.sessionResource : undefined);
+			return executeMoveToAction(accessor, MoveToNewLocation.Window, isChatViewTitleActionContext(context) ? context.sessionResource : undefined);
 		}
 	});
 
@@ -133,13 +134,17 @@ async function executeMoveToAction(accessor: ServicesAccessor, moveTo: MoveToNew
 	// Save off the session resource before clearing
 	const resourceToOpen = widget.viewModel.sessionResource;
 
-	// Todo: can possibly go away with https://github.com/microsoft/vscode/pull/278476
-	const modelInputState = existingWidget.getInputState();
-
-	await widget.clear();
-
-	const options: IChatEditorOptions = { pinned: true, modelInputState, auxiliary };
-	await widgetService.openSession(resourceToOpen, moveTo === MoveToNewLocation.Window ? AUX_WINDOW_GROUP : ACTIVE_GROUP, options);
+	await accessor.get(IHarnessChatNavigationService).run(resourceToOpen, async permit => {
+		// Capture the author draft only after the addressed source passed its guard.
+		const modelInputState = existingWidget.getInputState();
+		await widget.clear();
+		const options: IChatEditorOptions = { pinned: true, modelInputState, auxiliary, harnessNavigationPermit: permit };
+		const destination = await widgetService.openSession(resourceToOpen, moveTo === MoveToNewLocation.Window ? AUX_WINDOW_GROUP : ACTIVE_GROUP, options);
+		if (permit && destination?.viewModel?.sessionResource.toString() !== resourceToOpen.toString()) {
+			throw new Error('The moved conversation was not selected by the native editor.');
+		}
+	}, undefined, () => widget.viewModel?.sessionResource.toString() === resourceToOpen.toString()
+		&& widgetService.getWidgetBySessionResource(resourceToOpen) === existingWidget);
 }
 
 async function moveToSidebar(accessor: ServicesAccessor): Promise<void> {
@@ -151,15 +156,26 @@ async function moveToSidebar(accessor: ServicesAccessor): Promise<void> {
 	const chatEditorInput = chatEditor?.input;
 	let view: ChatViewPane;
 	if (chatEditor instanceof ChatEditor && chatEditorInput instanceof ChatEditorInput && chatEditorInput.sessionResource) {
-		const previousInputState = chatEditor.widget.getInputState();
-		await editorService.closeEditor({ editor: chatEditor.input, groupId: editorGroupService.activeGroup.id });
-		view = await viewsService.openView(ChatViewId) as ChatViewPane;
-
-		// Todo: can possibly go away with https://github.com/microsoft/vscode/pull/278476
-		const newModel = await view.loadSession(chatEditorInput.sessionResource);
-		if (previousInputState && newModel && !newModel.inputModel.state.get()) {
-			newModel.inputModel.setState(previousInputState);
-		}
+		const resource = chatEditorInput.sessionResource;
+		const sourceGroup = editorGroupService.activeGroup;
+		await accessor.get(IHarnessChatNavigationService).run(resource, async permit => {
+			const previousInputState = chatEditor.widget.getInputState();
+			const closed = await sourceGroup.closeEditor(chatEditorInput);
+			if (permit && !closed) { throw new Error('The source conversation editor was not closed for its move.'); }
+			view = await viewsService.openView(ChatViewId) as ChatViewPane;
+			if (permit && !view) { throw new Error('The destination Chat view was not available for its move.'); }
+			const newModel = await view.loadSession(resource, undefined, permit);
+			if (permit && newModel?.sessionResource.toString() !== resource.toString()) {
+				throw new Error('The moved conversation was not selected by the native Chat view.');
+			}
+			if (previousInputState && newModel && !newModel.inputModel.state.get()) {
+				newModel.inputModel.setState(previousInputState);
+			}
+			view.focus();
+		}, undefined, () => editorService.activeEditorPane === chatEditor && chatEditor.input === chatEditorInput
+			&& editorGroupService.getGroup(sourceGroup.id) === sourceGroup
+			&& !chatEditorInput.isDisposed() && chatEditorInput.sessionResource?.toString() === resource.toString());
+		return;
 	} else {
 		view = await viewsService.openView(ChatViewId) as ChatViewPane;
 	}

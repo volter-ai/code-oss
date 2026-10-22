@@ -312,7 +312,7 @@ async function main() {
 	}
 
 	// JS-only dirs run in parallel
-	const concurrency = Math.min(os.cpus().length, 8);
+	const concurrency = 1;
 	log('.', `Running ${parallelTasks.length} npm installs with concurrency ${concurrency}...`);
 	await runWithConcurrency(parallelTasks, concurrency);
 
