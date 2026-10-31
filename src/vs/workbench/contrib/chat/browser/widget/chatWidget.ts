@@ -7,6 +7,8 @@ import './media/chat.css';
 import './media/chatAgentHover.css';
 import './media/chatViewWelcome.css';
 import * as dom from '../../../../../base/browser/dom.js';
+import { EventType as TouchEventType } from '../../../../../base/browser/touch.js';
+import { IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
 import { IMouseWheelEvent } from '../../../../../base/browser/mouseEvent.js';
 import { disposableTimeout, timeout } from '../../../../../base/common/async.js';
@@ -442,6 +444,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 	private _inputVisible = true;
 	private _readOnly = false;
+	private _modelReadOnly = false;
+	private _harnessInactive = false;
 
 	private _instructionFilesCheckPromise: Promise<boolean> | undefined;
 	private _instructionFilesExist: boolean | undefined;
@@ -578,6 +582,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		@IDialogService private readonly dialogService: IDialogService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IHarnessChatNavigationService private readonly harnessNavigation: IHarnessChatNavigationService,
 		@IChatService private readonly chatService: IChatService,
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
@@ -613,6 +618,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	) {
 		super();
 		this._persistentContentHeight = viewOptions.persistentContentHeight ?? 0;
+		this._register(this.harnessNavigation.onDidChangeActiveResource(() => this.updateHarnessInactive()));
+		this._register(this.onDidChangeViewModel(() => this.updateHarnessInactive()));
 
 		this.readOnlyBanner = viewOptions.isSessionsWindow
 			? undefined
@@ -1102,6 +1109,31 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		const renderInputToolbarBelowInput = this.viewOptions.renderInputToolbarBelowInput ?? false;
 
 		this.container = dom.append(parent, $('.interactive-session'));
+		// Passive history remains focusable, selectable and copyable. It cannot invoke
+		// transcript buttons/links, tool approvals, questions, restores or handoffs.
+		const blockInactiveAction = (event: globalThis.Event) => {
+			if (!this._harnessInactive) { return; }
+			const target = event.target as Element | null;
+			if (!target || typeof target.closest !== 'function') { return; }
+			const question = target.closest('.chat-question-carousel-container');
+			const interactive = target.closest('a,button,input,textarea,[role="button"],[role="checkbox"],[role="radio"],[role="combobox"],[role="option"],[role="switch"],[role="slider"],[role="spinbutton"],[role^="menuitem"],[contenteditable="true"]');
+			const keyboardScope = event.type === 'keydown' && (question || target.closest('.chat-tool-confirmation-carousel,.chat-confirmation-widget'));
+			if (!interactive && !keyboardScope) { return; }
+			if ('key' in event) {
+				const key = String(event.key);
+				const readingShortcut = 'ctrlKey' in event && (event.ctrlKey || ('metaKey' in event && event.metaKey)) && ['a', 'c', 'f'].includes(key.toLowerCase());
+				if (readingShortcut || ['Tab', 'Shift', 'Control', 'Alt', 'Meta', 'F3'].includes(key) || (key === 'Escape' && !question)) { return; }
+			}
+			event.preventDefault();
+			event.stopImmediatePropagation();
+		};
+		this._register(dom.addDisposableListener(this.container, 'click', blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, TouchEventType.Tap, blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, 'dblclick', blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, 'keydown', blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, 'pointerdown', blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, 'beforeinput', blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, 'change', blockInactiveAction, true));
 		const targetWindow = dom.getWindow(this.container);
 		const focusTracker = this._register(dom.trackFocus(this.container));
 		this._register(focusTracker.onDidFocus(() => this.markSessionStateIndicatorVisited()));
@@ -2029,7 +2061,19 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	 * Read-only chats hide the composer and expose a context key so mutating
 	 * actions (e.g. Start Over, Restore Checkpoint) are not offered.
 	 */
+	private updateHarnessInactive(): void {
+		const resource = this.viewModel?.sessionResource;
+		const inactive = resource?.scheme === 'supercode' && !resource.path.startsWith('/untitled-')
+			&& resource.toString() !== this.harnessNavigation.activeResource;
+		if (inactive !== this._harnessInactive) {
+			this._harnessInactive = inactive;
+			this.setReadOnly(this._modelReadOnly);
+		}
+	}
+
 	setReadOnly(readOnly: boolean): void {
+		this._modelReadOnly = readOnly;
+		readOnly ||= this._harnessInactive;
 		const wasReadOnly = this._readOnly;
 		this._readOnly = readOnly;
 		this._readOnlyContextKey.set(readOnly);
@@ -2046,6 +2090,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		} else if (wasReadOnly) {
 			this.renderChatSuggestNextWidget();
 		}
+		this.readOnlyBanner?.setMessage(this._harnessInactive && !this._modelReadOnly
+			? localize('chat.inactiveConversation', "Inactive conversation. Open it from history to continue.") : undefined);
 		this.readOnlyBanner?.setVisible(readOnly);
 		this.setInputVisible(!readOnly);
 		// Authoritative over the lock/unlock `editable` toggles below.

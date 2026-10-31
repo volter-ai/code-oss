@@ -14,6 +14,7 @@ import { IChatProgressRenderableResponseContent } from '../../../common/model/ch
 import { IChatCommandButton } from '../../../common/chatService/chatService.js';
 import { isResponseVM } from '../../../common/model/chatViewModel.js';
 import { Command } from '../../../../../../editor/common/languages.js';
+import { IHarnessChatNavigationService } from '../../../../volter/browser/volterChatNavigation.js';
 
 const $ = dom.$;
 
@@ -22,8 +23,9 @@ export class ChatCommandButtonContentPart extends Disposable implements IChatCon
 
 	constructor(
 		commandButton: IChatCommandButton,
-		context: IChatContentPartRenderContext,
-		@ICommandService private readonly commandService: ICommandService
+		private readonly context: IChatContentPartRenderContext,
+		@ICommandService private readonly commandService: ICommandService,
+		@IHarnessChatNavigationService private readonly harnessNavigation: IHarnessChatNavigationService
 	) {
 		super();
 
@@ -50,7 +52,10 @@ export class ChatCommandButtonContentPart extends Disposable implements IChatCon
 		button.enabled = enabled;
 
 		// TODO still need telemetry for command buttons
-		this._register(button.onDidClick(() => this.commandService.executeCommand(command.id, ...(command.arguments ?? []))));
+		this._register(button.onDidClick(() => {
+			this.harnessNavigation.assertInteractive(this.context.element.sessionResource);
+			return this.commandService.executeCommand(command.id, ...(command.arguments ?? []));
+		}));
 	}
 
 	hasSameContent(other: IChatProgressRenderableResponseContent): boolean {
