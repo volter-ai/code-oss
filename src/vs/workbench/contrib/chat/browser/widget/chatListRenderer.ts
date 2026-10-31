@@ -1243,10 +1243,17 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			}
 		}));
 
+		const pendingResize = templateDisposables.add(new MutableDisposable<IDisposable>());
 		const resizeObserver = templateDisposables.add(new dom.DisposableResizeObserver('ChatListItemRenderer.itemHeight', (entries) => {
 			const entry = entries[0];
 			if (entry) {
-				this.fireItemHeightChange(template, entry.borderBoxSize.at(0)?.blockSize);
+				const element = template.currentElement;
+				pendingResize.value = dom.scheduleAtNextAnimationFrame(dom.getWindow(rowContainer), () => {
+					pendingResize.clear();
+					if (template.currentElement === element && rowContainer.isConnected) {
+						this.fireItemHeightChange(template, entry.borderBoxSize.at(0)?.blockSize);
+					}
+				});
 			}
 		}));
 		const resizeObservation = templateDisposables.add(new MutableDisposable<IDisposable>());
@@ -1256,6 +1263,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		connectionObserver.onDidDisconnect = () => {
 			template.renderedPartsMounted = false;
 			resizeObservation.clear();
+			pendingResize.clear();
 		};
 		if (rowContainer.isConnected) {
 			connectionObserver.onDidConnect();

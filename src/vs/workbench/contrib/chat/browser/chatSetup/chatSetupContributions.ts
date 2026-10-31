@@ -90,8 +90,8 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 
 		const context = chatEntitlementService.context?.value;
 		const requests = chatEntitlementService.requests?.value;
-		if (!context || !requests) {
-			return; // disabled
+		if (!context || !requests || !product.defaultChatAgent?.provider?.default?.id) {
+			return; // disabled: no provider to set up
 		}
 
 		const controller = new Lazy(() => this._register(this.instantiationService.createInstance(ChatSetupController, context, requests)));

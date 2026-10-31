@@ -168,7 +168,7 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 
 	private update(): void {
 		const sentiment = this.chatEntitlementService.sentiment;
-		if (!sentiment.hidden) {
+		if (!sentiment.hidden && product.defaultChatAgent?.provider?.default?.id) {
 			const props = this.getEntryProps();
 			if (this.entry) {
 				this.entry.update(props);

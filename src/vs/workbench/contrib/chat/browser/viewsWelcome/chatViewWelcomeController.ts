@@ -134,6 +134,7 @@ export interface IChatViewWelcomeContent {
 
 export interface IChatViewWelcomeRenderOptions {
 	readonly firstLinkToButton?: boolean;
+	readonly additionalMessageLinksToButtons?: boolean;
 	readonly location: ChatAgentLocation;
 	readonly isWidgetAgentWelcomeViewContent?: boolean;
 }
@@ -202,7 +203,7 @@ export class ChatViewWelcomePart extends Disposable {
 				if (typeof content.additionalMessage === 'string') {
 					disclaimers.textContent = content.additionalMessage;
 				} else {
-					const additionalMessageResult = this.renderMarkdownMessageContent(content.additionalMessage, options);
+					const additionalMessageResult = this.renderMarkdownMessageContent(content.additionalMessage, options, options?.additionalMessageLinksToButtons);
 					disclaimers.appendChild(additionalMessageResult.element);
 				}
 			}
@@ -232,20 +233,31 @@ export class ChatViewWelcomePart extends Disposable {
 			this.content.tips?.value !== content.tips?.value);
 	}
 
-	private renderMarkdownMessageContent(content: IMarkdownString, options: IChatViewWelcomeRenderOptions | undefined): IRenderedMarkdown {
+	private renderMarkdownMessageContent(content: IMarkdownString, options: IChatViewWelcomeRenderOptions | undefined, standaloneCommands = false): IRenderedMarkdown {
 		const messageResult = this._register(this.markdownRendererService.render(content));
+		const allowedCommands = content.isTrusted === true ? true
+			: typeof content.isTrusted === 'object' ? content.isTrusted.enabledCommands : [];
+		// Like viewsWelcome, a paragraph containing only a link is an action.
+		// Inline links and untrusted commands retain ordinary Markdown rendering.
 		// eslint-disable-next-line no-restricted-syntax
 		const firstLink = options?.firstLinkToButton ? messageResult.element.querySelector('a') : undefined;
-		if (firstLink) {
-			const target = firstLink.getAttribute('data-href');
-			const button = this._register(new Button(firstLink.parentElement!, defaultButtonStyles));
-			button.label = firstLink.textContent ?? '';
+		// eslint-disable-next-line no-restricted-syntax
+		const links = standaloneCommands ? Array.from(messageResult.element.querySelectorAll('p > a:only-child')).filter(link => {
+			const target = link.getAttribute('data-href');
+			return link.parentElement?.textContent?.trim() === link.textContent?.trim()
+				&& target?.startsWith('command:')
+				&& (allowedCommands === true || allowedCommands.includes(URI.parse(target).path));
+		}) : firstLink ? [firstLink] : [];
+		for (const link of links) {
+			const target = link.getAttribute('data-href');
+			const button = this._register(new Button(link.parentElement!, defaultButtonStyles));
+			button.label = link.textContent ?? '';
 			if (target) {
 				this._register(button.onDidClick(() => {
-					this.openerService.open(target, { allowCommands: true });
+					this.openerService.open(target, { allowCommands: standaloneCommands ? allowedCommands : true });
 				}));
 			}
-			firstLink.replaceWith(button.element);
+			link.replaceWith(button.element);
 		}
 		return messageResult;
 	}
