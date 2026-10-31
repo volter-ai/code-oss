@@ -7,9 +7,11 @@ name: Volter workbench artifact (darwin-arm64)
 # This door has no publish job or write permission: only BUILD.json and its
 # archive are retained for seven days. It changes no release or product pin.
 #
-# macos-15-xlarge is GitHub's hosted Apple Silicon runner with 14 GB RAM;
-# --min-ram 13 accounts for the reported GiB while retaining the existing
-# 9216 MiB Node heap and serial vendor build. Disk is checked before install:
+# macos-15 is GitHub's standard hosted Apple Silicon runner (free for this public
+# repository; the larger macos-15-xlarge is a paid runner). It has about 7 GB RAM:
+# --min-ram 6 accounts for the reported GiB, and the existing 9216 MiB Node heap
+# is a ceiling the serial vendor build may exceed physical memory toward, which
+# macOS pages. The first step prints the runner's disk and memory as measured. Disk is checked before install:
 # the disposable hosted image's unused Android SDK is removed, then the cut's
 # 17 GiB of free space is required. The native Xcode toolchain is preserved.
 # Native tool/space refusal is retained as a failed build, never an artifact.
@@ -55,11 +57,16 @@ env:
 
 jobs:
   build:
-    runs-on: macos-15-xlarge
+    runs-on: macos-15
     timeout-minutes: 240
     permissions:
       contents: read
     steps:
+      - name: Measure the runner
+        run: |
+          df -h
+          sysctl -n hw.memsize hw.ncpu
+
       - name: Check the inputs
         run: |
           [[ "$RUNNER_ENVIRONMENT" == github-hosted ]] || { echo "::error::this native cut requires the disposable GitHub-hosted image"; exit 1; }
@@ -235,7 +242,7 @@ jobs:
           npm_config_python: ${{ steps.python.outputs.python-path }}
         run: |
           node scripts/workbench/build-release.mjs --product "$PRODUCT" --platform darwin-arm64 \
-            --checkout "$GITHUB_WORKSPACE/code-oss" --work "$WORKBENCH_ROOT/work" --out "$WORKBENCH_ROOT/out" --min-ram 13
+            --checkout "$GITHUB_WORKSPACE/code-oss" --work "$WORKBENCH_ROOT/work" --out "$WORKBENCH_ROOT/out" --min-ram 6
 
       - name: Summary
         if: always()
