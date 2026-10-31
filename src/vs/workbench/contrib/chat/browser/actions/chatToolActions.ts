@@ -18,6 +18,7 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
+import { IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
 import { ConfirmedReason, IChatToolInvocation, ToolConfirmKind } from '../../common/chatService/chatService.js';
 import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { ChatModeKind } from '../../common/constants.js';
@@ -55,6 +56,7 @@ abstract class ToolConfirmationAction extends Action2 {
 		const widget = context?.sessionResource
 			? chatWidgetService.getWidgetBySessionResource(context.sessionResource)
 			: chatWidgetService.lastFocusedWidget;
+		accessor.get(IHarnessChatNavigationService).assertInteractive(widget?.viewModel?.sessionResource);
 		const lastItem = widget?.viewModel?.getItems().at(-1);
 		if (!isResponseVM(lastItem)) {
 			return;
