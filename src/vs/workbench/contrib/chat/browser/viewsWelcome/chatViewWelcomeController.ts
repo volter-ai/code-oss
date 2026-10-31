@@ -24,6 +24,8 @@ import { IOpenerService } from '../../../../../platform/opener/common/opener.js'
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { ChatAgentLocation } from '../../common/constants.js';
 import { chatViewsWelcomeRegistry, IChatViewsWelcomeDescriptor } from './chatViewsWelcome.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { ChatSetupState, renderChatSetupWelcome, renderChatSignedInNotice } from '../../../volter/browser/volterChatWelcome.js';
 
 const $ = dom.$;
 
@@ -126,6 +128,8 @@ export interface IChatViewWelcomeContent {
 	tips?: IMarkdownString;
 	readonly inputPart?: HTMLElement;
 	readonly useLargeIcon?: boolean;
+	/** The chat extension's setup state; while visible it replaces the Markdown welcome. */
+	readonly setup?: ChatSetupState;
 }
 
 export interface IChatViewWelcomeRenderOptions {
@@ -143,12 +147,22 @@ export class ChatViewWelcomePart extends Disposable {
 		@IOpenerService private openerService: IOpenerService,
 		@ILogService private logService: ILogService,
 		@IMarkdownRendererService private readonly markdownRendererService: IMarkdownRendererService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 
 		this.element = dom.$('.chat-welcome-view');
 
 		try {
+			// No agent ready: the extension's setup state replaces the Markdown welcome.
+			// Without a visible one, everything below renders as it always has.
+			if (content.setup?.visible) {
+				this._register(renderChatSetupWelcome(this.element, content.setup, this.commandService, this.logService));
+				return;
+			}
+			if (content.setup?.signedInNotice) {
+				renderChatSignedInNotice(this.element, content.setup.signedInNotice);
+			}
 
 			// Icon
 			const icon = dom.append(this.element, $('.chat-welcome-view-icon'));
@@ -205,8 +219,13 @@ export class ChatViewWelcomePart extends Disposable {
 	}
 
 	public needsRerender(content: IChatViewWelcomeContent): boolean {
+		// A visible setup state replaces the Markdown welcome, so then it alone decides.
+		const setupChanged = JSON.stringify(this.content.setup) !== JSON.stringify(content.setup);
+		if (this.content.setup?.visible && content.setup?.visible) {
+			return setupChanged;
+		}
 		// Heuristic based on content that changes between states
-		return !!(
+		return setupChanged || !!(
 			this.content.title !== content.title ||
 			this.content.message.value !== content.message.value ||
 			this.content.additionalMessage !== content.additionalMessage ||
