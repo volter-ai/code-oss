@@ -15,7 +15,7 @@ export const dirs = [
 	'build/vite',
 	'extensions',
 	'extensions/configuration-editing',
-	'extensions/copilot',
+	// VOLTER (overlaid tier — scripts/workbench/overlay.mjs): 'extensions/copilot' is not in this build.
 	'extensions/css-language-features',
 	'extensions/css-language-features/server',
 	'extensions/debug-auto-launch',
@@ -49,7 +49,7 @@ export const dirs = [
 	'extensions/tunnel-forwarding',
 	'extensions/terminal-suggest',
 	'extensions/typescript-language-features',
-	'extensions/vscode-api-tests',
+	// VOLTER (overlaid tier — scripts/workbench/overlay.mjs): 'extensions/vscode-api-tests' is not in this build.
 	'extensions/vscode-colorize-tests',
 	'extensions/vscode-colorize-perf-tests',
 	'extensions/vscode-test-resolver',
