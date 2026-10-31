@@ -2,8 +2,8 @@ name: Volter workbench artifact (darwin-arm64)
 
 # Source prerequisite t_bbe841eb for t_de1c2b37 / t_c92f341b, Articles 1/5/8/9.
 # Run the editor's existing native vendor build at its exact fork pin. The
-# editor revision must be on main or the exact head of its named in-repo PR,
-# preserving the Windows/Linux workflows' source selection and token rules.
+# editor revision must be on main or the exact head of its named PR, open and
+# mergeable into main (read as git data, as the Windows/Linux workflows read it).
 # This door has no publish job or write permission: only BUILD.json and its
 # archive are retained for seven days. It changes no release or product pin.
 #
@@ -94,24 +94,29 @@ jobs:
           git merge-base --is-ancestor "$EDITOR_REVISION" origin/main || { echo "::error::$EDITOR_REVISION is not on volter-ai/editor main"; exit 1; }
 
       # volter-ai/editor is private: the job's own token cannot read its pull requests, and the read-only
-      # deploy key reads git, not the API. So the head is checked as git data: the pull request's own ref,
-      # fetched with that key into a separate path, must be exactly the revision this run builds.
-      - name: Fetch the named editor pull request's head
+      # deploy key reads git, not the API. So the pull request is checked as git data. GitHub keeps
+      # `refs/pull/N/merge` only while the pull request is open and mergeable: its first parent is the
+      # base branch's tip, which must be on main, and its second parent is the head, which must be exactly
+      # the revision this run builds.
+      - name: Fetch the named editor pull request's merge
         if: inputs.editor_pull_request != ''
         uses: actions/checkout@v4
         with:
           repository: volter-ai/editor
           ssh-key: ${{ secrets.CODE_OSS_EDITOR_DEPLOY_KEY }}
-          ref: refs/pull/${{ inputs.editor_pull_request }}/head
+          ref: refs/pull/${{ inputs.editor_pull_request }}/merge
           path: editor-pr
-          fetch-depth: 1
+          fetch-depth: 2
           persist-credentials: false
 
-      - name: Refuse a revision that is not the head of the named editor pull request
+      - name: Refuse a pull request that is not open into main with this revision as its head
         if: inputs.editor_pull_request != ''
         run: |
-          head=$(git -C editor-pr rev-parse HEAD)
-          echo "volter-ai/editor PR #$EDITOR_PULL_REQUEST: head $head"
+          base=$(git -C editor-pr rev-parse HEAD^1) && head=$(git -C editor-pr rev-parse HEAD^2) \
+            || { echo "::error::refs/pull/$EDITOR_PULL_REQUEST/merge is not a merge: the pull request is closed or not mergeable"; exit 1; }
+          echo "volter-ai/editor PR #$EDITOR_PULL_REQUEST: open, base tip $base, head $head"
+          git -C editor merge-base --is-ancestor "$base" origin/main \
+            || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST does not target main (its base tip $base is not on main)"; exit 1; }
           [[ "$head" == "$EDITOR_REVISION" ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST head is $head, not $EDITOR_REVISION"; exit 1; }
           rm -rf editor-pr
 
