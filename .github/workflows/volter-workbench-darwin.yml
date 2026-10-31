@@ -80,6 +80,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: volter-ai/editor
+          ssh-key: ${{ secrets.CODE_OSS_EDITOR_DEPLOY_KEY }}
           ref: ${{ inputs.editor_revision }}
           path: editor
           fetch-depth: 0
@@ -92,22 +93,27 @@ jobs:
         run: |
           git merge-base --is-ancestor "$EDITOR_REVISION" origin/main || { echo "::error::$EDITOR_REVISION is not on volter-ai/editor main"; exit 1; }
 
-      # The job's token is read-only (contents: read) and lives in this step's env alone; nothing here installs
-      # or runs a dependency.
+      # volter-ai/editor is private: the job's own token cannot read its pull requests, and the read-only
+      # deploy key reads git, not the API. So the head is checked as git data: the pull request's own ref,
+      # fetched with that key into a separate path, must be exactly the revision this run builds.
+      - name: Fetch the named editor pull request's head
+        if: inputs.editor_pull_request != ''
+        uses: actions/checkout@v4
+        with:
+          repository: volter-ai/editor
+          ssh-key: ${{ secrets.CODE_OSS_EDITOR_DEPLOY_KEY }}
+          ref: refs/pull/${{ inputs.editor_pull_request }}/head
+          path: editor-pr
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Refuse a revision that is not the head of the named editor pull request
         if: inputs.editor_pull_request != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          pr=$(gh api "repos/volter-ai/editor/pulls/$EDITOR_PULL_REQUEST" \
-            --jq '[.state, .base.ref, .head.sha, (.head.repo.full_name // "a deleted repository")] | @tsv') \
-            || { echo "::error::could not read volter-ai/editor PR #$EDITOR_PULL_REQUEST"; exit 1; }
-          IFS=$'\t' read -r state base head repo <<< "$pr"
-          echo "volter-ai/editor PR #$EDITOR_PULL_REQUEST: $state, base $base, head $head from $repo"
-          [[ "$state" == open ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST is $state, not open"; exit 1; }
-          [[ "$base" == main ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST targets $base, not main"; exit 1; }
-          [[ "$repo" == volter-ai/editor ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST comes from $repo, not volter-ai/editor"; exit 1; }
+          head=$(git -C editor-pr rev-parse HEAD)
+          echo "volter-ai/editor PR #$EDITOR_PULL_REQUEST: head $head"
           [[ "$head" == "$EDITOR_REVISION" ]] || { echo "::error::volter-ai/editor PR #$EDITOR_PULL_REQUEST head is $head, not $EDITOR_REVISION"; exit 1; }
+          rm -rf editor-pr
 
       # The pin is read as data from git, never require()d from the tree: a FORK.json committed as a symlink to a
       # script would otherwise run as code. A symlink's blob is its target path, which fails the parse.
