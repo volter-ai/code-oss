@@ -223,6 +223,8 @@ export interface IProductConfiguration {
 
 	readonly serverGreeting?: string[];
 	readonly serverLicense?: string[];
+	/** False when this distribution omits the optional VSDA payload. */
+	readonly vsdaEnabled?: boolean;
 	readonly serverLicensePrompt?: string;
 	readonly serverApplicationName: string;
 	readonly serverDataFolderName?: string;
