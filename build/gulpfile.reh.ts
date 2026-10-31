@@ -669,9 +669,9 @@ function tweakProductForServerWeb(product: typeof import('../product.json')) {
 				prepareCopilotRipgrepShimTaskREH(platform, arch, destinationFolderName)
 			];
 
-			if (platform === 'win32') {
-				packageTasks.push(patchWin32DependenciesTask(destinationFolderName));
-			}
+			// VOLTER (overlaid tier — scripts/workbench/overlay.mjs): no signing service re-signs
+			// this release, so win32 binaries keep their published bytes (patchWin32Dependencies).
+			void patchWin32DependenciesTask;
 
 			const serverTaskCI = task.define(`vscode-${type}${dashed(platform)}${dashed(arch)}${dashed(minified)}-ci`, task.series(...packageTasks));
 			task.task(serverTaskCI);
