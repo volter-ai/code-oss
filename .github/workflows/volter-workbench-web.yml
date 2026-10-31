@@ -59,6 +59,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: volter-ai/editor
+          ssh-key: ${{ secrets.CODE_OSS_EDITOR_DEPLOY_KEY }}
           ref: ${{ inputs.editor_revision }}
           path: editor
           fetch-depth: 0
