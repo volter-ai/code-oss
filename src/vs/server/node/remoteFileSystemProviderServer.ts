@@ -12,6 +12,7 @@ import { createURITransformer } from '../../base/common/uriTransformer.js';
 import { RemoteAgentConnectionContext } from '../../platform/remote/common/remoteAgentEnvironment.js';
 import { DiskFileSystemProvider } from '../../platform/files/node/diskFileSystemProvider.js';
 import { posix, delimiter } from '../../base/common/path.js';
+import { isWindows } from '../../base/common/platform.js';
 import { IServerEnvironmentService } from './serverEnvironmentService.js';
 import { AbstractDiskFileSystemProviderChannel, AbstractSessionFileWatcher, ISessionFileWatcher } from '../../platform/files/node/diskFileSystemProviderServer.js';
 import { IRecursiveWatcherOptions } from '../../platform/files/common/watcher.js';
@@ -89,8 +90,11 @@ class SessionFileWatcher extends AbstractSessionFileWatcher {
 	protected override getExtraExcludes(environmentService: IServerEnvironmentService): string[] | undefined {
 		if (environmentService.extensionsPath) {
 			// when opening the $HOME folder, we end up watching the extension folder
-			// so simply exclude watching the extensions folder
-			return [posix.join(environmentService.extensionsPath, '**')];
+			// so simply exclude watching the extensions folder. With forward slashes: on Windows the
+			// path holds backslashes, and the recursive watcher (@parcel/watcher) compiles each
+			// exclude into a regular expression in which a backslash before a digit (a folder `53b5`,
+			// a home folder `1jo`) is a back-reference, so it throws and the file watcher stops.
+			return [posix.join(isWindows ? environmentService.extensionsPath.replace(/\\/g, '/') : environmentService.extensionsPath, '**')];
 		}
 
 		return undefined;

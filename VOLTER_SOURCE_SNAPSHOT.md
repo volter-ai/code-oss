@@ -33,6 +33,12 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `editorTitleControl.ts`, and the test double in
   `src/vs/workbench/test/browser/workbenchTestServices.ts`. Used by the editor's
   `volterDocuments.ts` for workspace areas.
+- **The server's watcher exclude for its extensions folder uses forward slashes.**
+  `getExtraExcludes` in `src/vs/server/node/remoteFileSystemProviderServer.ts`. On Windows the
+  extensions path (`resolve(--extensions-dir)`) holds backslashes, and @parcel/watcher compiles
+  each exclude glob into a regular expression in which a backslash before a digit is a
+  back-reference: the watcher threw and every file watch stopped. The only watcher glob in the
+  source built from a filesystem path.
 
 ## Patches moved from the editor overlay
 
