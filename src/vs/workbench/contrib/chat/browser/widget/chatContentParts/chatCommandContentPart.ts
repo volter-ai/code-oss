@@ -22,7 +22,7 @@ export class ChatCommandButtonContentPart extends Disposable implements IChatCon
 	public readonly domNode: HTMLElement;
 
 	constructor(
-		commandButton: IChatCommandButton,
+		private readonly commandButton: IChatCommandButton,
 		private readonly context: IChatContentPartRenderContext,
 		@ICommandService private readonly commandService: ICommandService,
 		@IHarnessChatNavigationService private readonly harnessNavigation: IHarnessChatNavigationService
@@ -60,6 +60,11 @@ export class ChatCommandButtonContentPart extends Disposable implements IChatCon
 
 	hasSameContent(other: IChatProgressRenderableResponseContent): boolean {
 		// No other change allowed for this content type
-		return other.kind === 'command';
+		if (other.kind !== 'command') { return false; }
+		if (!this.commandButton.harnessAnswerGroup && !other.harnessAnswerGroup) { return true; }
+		return other.harnessAnswerGroup === this.commandButton.harnessAnswerGroup
+			&& other.command === this.commandButton.command
+			&& (other.additionalCommands?.length ?? 0) === (this.commandButton.additionalCommands?.length ?? 0)
+			&& (other.additionalCommands ?? []).every((command, index) => command === this.commandButton.additionalCommands?.[index]);
 	}
 }

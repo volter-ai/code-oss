@@ -1659,7 +1659,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 						welcomeContent,
 						{
 							location: this.location,
-							isWidgetAgentWelcomeViewContent: this.input?.currentModeKind === ChatModeKind.Agent
+							isWidgetAgentWelcomeViewContent: this.input?.currentModeKind === ChatModeKind.Agent,
+							additionalMessageLinksToButtons: true
 						}
 					);
 					dom.append(this.welcomeMessageContainer, this.welcomePart.value.element);

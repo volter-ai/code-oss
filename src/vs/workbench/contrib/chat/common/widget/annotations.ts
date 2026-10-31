@@ -131,6 +131,13 @@ export function annotateSpecialMarkdownContentWithSource(response: Iterable<ICha
 					sourceIndexes: [...previousEntry.sourceIndexes, currentSourceIndex],
 				});
 			}
+		} else if (item.kind === 'command' && item.harnessAnswerGroup
+			&& previousItem?.kind === 'command' && previousItem.harnessAnswerGroup === item.harnessAnswerGroup
+			&& previousEntry.sourceIndexes.at(-1) === currentSourceIndex - 1) {
+			result[previousItemIndex] = {
+				content: { ...previousItem, additionalCommands: [...(previousItem.additionalCommands ?? []), item.command, ...(item.additionalCommands ?? [])] },
+				sourceIndexes: [...previousEntry.sourceIndexes, currentSourceIndex],
+			};
 		} else if (item.kind === 'voiceProgress') {
 			continue;
 		} else {
