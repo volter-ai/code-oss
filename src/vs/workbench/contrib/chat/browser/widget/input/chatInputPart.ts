@@ -3760,7 +3760,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			[OpenSessionTargetPickerAction.ID, CHAT_INPUT_COMPACT_PICKER_WIDTH],
 			[OpenDelegationPickerAction.ID, CHAT_INPUT_COMPACT_PICKER_WIDTH],
 			[OpenWorkspacePickerAction.ID, CHAT_INPUT_COMPACT_PICKER_WIDTH],
-			[OpenPermissionPickerAction.ID, CHAT_INPUT_COMPACT_PICKER_WIDTH],
+			// Permissions retain their selected text; their minimum is measured below.
 			[ChatSessionPrimaryPickerAction.ID, CHAT_INPUT_COMPACT_PICKER_WIDTH],
 			[OpenAgentHostModePickerAction.ID, CHAT_INPUT_COMPACT_PICKER_WIDTH],
 			['sessions.agentHost.runningSessionModePicker', CHAT_INPUT_COMPACT_PICKER_WIDTH],
@@ -3801,7 +3801,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				kind: 'all',
 				minItems: 1,
 				actionMinWidth: 48,
-				getActionMinWidth: action => secondaryPickerMinWidths.get(action.id) ?? (secondaryPickerCompactStates.get(action.id)?.get() ? 22 : undefined),
+				getActionMinWidth: action => action.id === OpenPermissionPickerAction.ID
+					? this.permissionWidget?.getMinimumWidth()
+					: secondaryPickerMinWidths.get(action.id) ?? (secondaryPickerCompactStates.get(action.id)?.get() ? 22 : undefined),
 				observedElement: responsivePickerContainer,
 				getAvailableWidth: getSecondaryToolbarAvailableWidth,
 				allowOverflow: () => this._secondaryPickerResponsiveLayout?.areAllItemsCompact() === true,

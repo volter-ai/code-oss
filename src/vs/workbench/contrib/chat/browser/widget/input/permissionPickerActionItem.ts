@@ -404,11 +404,10 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 
 		const labelElements = [];
 		labelElements.push(...renderLabelWithIcons(`$(${getCompactCodicon(icon).id})`));
-		const compact = this.pickerOptions.compact.get();
-		element.classList.toggle('icon-only', compact);
-		if (!compact) {
-			labelElements.push(dom.$('span.chat-input-picker-label', undefined, label));
-		}
+		// The selected permission is a persistent part of the native control.
+		// Compact layout must not turn it into an unexplained lock icon.
+		element.classList.remove('icon-only');
+		labelElements.push(dom.$('span.chat-input-picker-label', undefined, label));
 		if (sandboxIcon) {
 			labelElements.push(dom.$(`span.codicon.codicon-${getCompactCodicon(Codicon.shield).id}.chat-input-picker-sandbox-icon`, { 'aria-hidden': 'true' }));
 		}
@@ -431,6 +430,12 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 			this._hover.value = this.hoverService.setupDelayedHover(element, () => ({ content: this._currentTooltip }));
 		}
 		return null;
+	}
+
+	/** The responsive toolbar must reserve the label's width, even in compact mode. */
+	public getMinimumWidth(): number | undefined {
+		const width = this.element?.scrollWidth;
+		return width && width > 0 ? width : undefined;
 	}
 
 	public refresh(): void {
