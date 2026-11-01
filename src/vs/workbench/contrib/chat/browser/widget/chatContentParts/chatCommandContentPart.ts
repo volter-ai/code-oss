@@ -14,7 +14,7 @@ import { IChatProgressRenderableResponseContent } from '../../../common/model/ch
 import { IChatCommandButton } from '../../../common/chatService/chatService.js';
 import { isResponseVM } from '../../../common/model/chatViewModel.js';
 import { Command } from '../../../../../../editor/common/languages.js';
-import { IHarnessChatNavigationService } from '../../../../volter/browser/volterChatNavigation.js';
+import { IHarnessChatNavigationService } from '../../volterHarness/volterChatNavigation.js';
 
 const $ = dom.$;
 

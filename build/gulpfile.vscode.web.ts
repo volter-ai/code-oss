@@ -70,6 +70,9 @@ export const vscodeWebResourceIncludes = [
 	'out-build/vs/platform/accessibilitySignal/browser/media/*.mp3',
 	'out-build/vs/workbench/contrib/agentsVoice/browser/media/*.mp3',
 
+	// Volter's harness Chat: its packaged agent logos
+	'out-build/vs/workbench/contrib/chat/browser/volterHarness/media/*.{svg,png}',
+
 	// Welcome
 	'out-build/vs/workbench/contrib/welcomeGettingStarted/common/media/**/*.{svg,png}',
 	'out-build/vs/workbench/contrib/welcomeOnboarding/browser/media/*.svg',
