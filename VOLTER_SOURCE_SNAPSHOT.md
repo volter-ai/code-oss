@@ -64,9 +64,9 @@ overlay can drop it.
 | `a142f7793fdf` | `patchWin32Dependencies` | `build/gulpfile.reh.ts` |
 | `a36ad3ad2dad` | `patchNpmDirs` | `build/npm/dirs.ts` |
 | `aede13df14f0` | `main()` inline: vscode-api-tests out of the dev compile | `build/gulpfile.extensions.ts` |
+| `cc13aa989177` | `harnessChatSources`: Volter's harness Chat modules, beside the patches that import them | `src/vs/workbench/contrib/chat/browser/volterHarness/**`, the eight chat-patch files' imports, `src/vs/workbench/workbench.common.main.ts`, `build/gulpfile.vscode.web.ts` |
 
-These patches import modules that the overlay copies in from the editor kit under
-`src/vs/workbench/contrib/volter/browser/` (`volterChatNavigation.js`, `volterChatApproval.js`,
-`volterChatWelcome.js`). The fork compiles only with that kit in place.
+The chat patches import Volter's harness Chat modules from
+`src/vs/workbench/contrib/chat/browser/volterHarness/` (`harnessChatSources`), in this repository.
 
 `patchSourcesProduct` stays in the overlay: it writes per-target build configuration.
