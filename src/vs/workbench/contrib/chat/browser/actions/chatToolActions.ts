@@ -18,7 +18,7 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
+import { IHarnessChatNavigationService } from '../volterHarness/volterChatNavigation.js';
 import { ConfirmedReason, IChatToolInvocation, ToolConfirmKind } from '../../common/chatService/chatService.js';
 import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { ChatModeKind } from '../../common/constants.js';

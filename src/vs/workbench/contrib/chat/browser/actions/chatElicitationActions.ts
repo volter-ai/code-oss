@@ -10,7 +10,7 @@ import { Action2, registerAction2 } from '../../../../../platform/actions/common
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
+import { IHarnessChatNavigationService } from '../volterHarness/volterChatNavigation.js';
 import { ElicitationState } from '../../common/chatService/chatService.js';
 import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { IChatWidgetService } from '../chat.js';

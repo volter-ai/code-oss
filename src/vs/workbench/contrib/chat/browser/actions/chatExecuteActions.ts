@@ -26,7 +26,7 @@ import { AgentHostAllowSignedOutWhenUsableSettingId } from '../../../../../platf
 import { AGENT_HOST_EXISTING_SESSION_HARNESS_PICKER_ENABLED_CONTEXT_KEY } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { IsSessionsWindowContext } from '../../../../common/contextkeys.js';
 import { ChatContextKeyExprs, ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
+import { IHarnessChatNavigationService } from '../volterHarness/volterChatNavigation.js';
 import { buildCustomAgentHandoffsInfo, getHandoffId, IChatMode, IChatModeService, IChatModes } from '../../common/chatModes.js';
 import { reportChatModeChange } from '../../common/chatModeTelemetry.js';
 import { chatVariableLeader } from '../../common/requestParser/chatParserTypes.js';
