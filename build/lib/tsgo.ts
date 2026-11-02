@@ -34,7 +34,8 @@ export function spawnTsgo(projectPath: string, config: { taskName: string; noEmi
 		}
 	}
 
-	const args = [ts7TscPath, '--project', projectPath, '--pretty', 'false', '--incremental'];
+	// One checker: on src/ the default's parallel checkers raised the compile's peak from 5.9 GB to 7.5 GB, with no gain in wall time.
+	const args = [ts7TscPath, '--project', projectPath, '--pretty', 'false', '--incremental', '--checkers', '1'];
 	if (config.noEmit) {
 		args.push('--noEmit');
 	} else {
