@@ -23,7 +23,7 @@ import { ChatEditor, IChatEditorOptions } from '../widgetHosts/editor/chatEditor
 import { ChatEditorInput } from '../widgetHosts/editor/chatEditorInput.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
 import { CHAT_CATEGORY } from './chatActions.js';
-import { IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
+import { IHarnessChatNavigationService } from '../volterHarness/volterChatNavigation.js';
 
 enum MoveToNewLocation {
 	Editor = 'Editor',

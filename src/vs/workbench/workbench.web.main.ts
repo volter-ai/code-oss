@@ -191,4 +191,4 @@ import './contrib/browserView/browser/browserView.contribution.js';
 
 //#endregion
 
-import './contrib/volter/browser/volterChat.services.js';
+import './contrib/chat/browser/volterHarness/volterChat.services.js';

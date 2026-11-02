@@ -22,7 +22,7 @@ import { ChatViewId, ChatViewPaneTarget, IChatWidget, IChatWidgetService, IQuick
 import { ChatEditor, IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatEditorInput } from '../widgetHosts/editor/chatEditorInput.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
-import { HarnessChatNavigationPermit, IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
+import { HarnessChatNavigationPermit, IHarnessChatNavigationService } from '../volterHarness/volterChatNavigation.js';
 
 export class ChatWidgetService extends Disposable implements IChatWidgetService {
 

@@ -35,7 +35,7 @@ import { ChatAgentLocation, ChatModeKind, IResolvedNewChatSessionType, SessionTy
 import { clearChatEditor } from '../../actions/chatClear.js';
 import { AgentHostSessionInputPills } from '../../agentSessions/agentHost/agentHostSessionInputPills.js';
 import { ChatEditorInput } from './chatEditorInput.js';
-import { HarnessChatNavigationPermit } from '../../../../volter/browser/volterChatNavigation.js';
+import { HarnessChatNavigationPermit } from '../../volterHarness/volterChatNavigation.js';
 import { ChatWidget } from '../../widget/chatWidget.js';
 import { IChatWidgetViewState, setModelPreservingInputTypedWhileLoading } from '../../chat.js';
 

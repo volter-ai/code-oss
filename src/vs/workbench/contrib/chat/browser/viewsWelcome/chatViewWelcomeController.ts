@@ -25,7 +25,7 @@ import { defaultButtonStyles } from '../../../../../platform/theme/browser/defau
 import { ChatAgentLocation } from '../../common/constants.js';
 import { chatViewsWelcomeRegistry, IChatViewsWelcomeDescriptor } from './chatViewsWelcome.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { ChatSetupState, renderChatSetupWelcome, renderChatSignedInNotice } from '../../../volter/browser/volterChatWelcome.js';
+import { ChatSetupState, renderChatSetupWelcome, renderChatSignedInNotice } from '../volterHarness/volterChatWelcome.js';
 
 const $ = dom.$;
 

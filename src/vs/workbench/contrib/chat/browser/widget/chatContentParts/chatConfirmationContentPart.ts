@@ -12,7 +12,7 @@ import { isResponseVM } from '../../../common/model/chatViewModel.js';
 import { IChatWidgetService } from '../../chat.js';
 import { SimpleChatConfirmationWidget } from './chatConfirmationWidget.js';
 import { IChatContentPart, IChatContentPartRenderContext } from './chatContentParts.js';
-import { HarnessChatApprovalContentPart, isHarnessApproval } from '../../../../volter/browser/volterChatApproval.js';
+import { HarnessChatApprovalContentPart, isHarnessApproval } from '../../volterHarness/volterChatApproval.js';
 
 export class ChatConfirmationContentPart extends Disposable implements IChatContentPart {
 	public readonly domNode: HTMLElement;
