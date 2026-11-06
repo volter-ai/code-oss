@@ -91,7 +91,11 @@ export const vscodeWebResourceIncludes = [
 	'out-build/vs/editor/common/languages/injections/*.scm',
 
 	// Extension Host Worker
-	'out-build/vs/workbench/services/extensions/worker/webWorkerExtensionHostIframe.html'
+	'out-build/vs/workbench/services/extensions/worker/webWorkerExtensionHostIframe.html',
+
+	// VOLTER (overlaid tier — scripts/workbench/overlay.mjs)
+	'out-build/vs/workbench/contrib/volter/browser/media/**',
+	'out-build/vs/workbench/contrib/volterProduct/browser/media/**'
 ];
 
 const vscodeWebResources = [

@@ -130,6 +130,8 @@ export function compileTask(src: string, out: string, build: boolean, options: {
 
 		// For dev builds we can transpile with esbuild for speed and type-check with tsgo (no emit).
 		// For `build`, keep the full tsb pipeline because the NLS step requires `file.sourceMap`.
+		await spawnTsgo(path.join(import.meta.dirname, '../../', src, 'tsconfig.json'), { taskName: `compile-${path.basename(src)}`, noEmit: true });
+
 		const compile = createCompile(src, { build, emitError: true, transpileOnly: build ? false : { esbuild: true }, preserveEnglish: !!options.preserveEnglish });
 		const srcPipe = gulp.src(`${src}/**`, { base: `${src}` });
 		const generator = new MonacoGenerator(false);
@@ -166,9 +168,7 @@ export function compileTask(src: string, out: string, build: boolean, options: {
 			.pipe(compile())
 			.pipe(gulp.dest(out)));
 
-		const typecheck = spawnTsgo(compile.projectPath, { taskName: `compile-${path.basename(src)}`, noEmit: true });
-
-		await Promise.all([emit, typecheck]);
+		await emit;
 	};
 
 	task.taskName = `compile-${path.basename(src)}`;

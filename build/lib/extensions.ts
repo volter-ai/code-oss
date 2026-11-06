@@ -60,6 +60,23 @@ function updateExtensionPackageJSON(input: Stream, update: (data: any) => any): 
 		.pipe(packageJsonFilter.restore);
 }
 
+// Start the next stream only after the previous compiler has finished.
+function serialStreams(factories: (() => Stream)[]): Stream {
+	const output = es.through();
+	let index = 0;
+	const next = () => {
+		if (index === factories.length) { output.end(); return; }
+		try {
+			const input = factories[index++]();
+			input.once('error', error => output.emit('error', error));
+			input.once('end', next);
+			input.pipe(output, { end: false });
+		} catch (error) { output.emit('error', error); }
+	};
+	process.nextTick(next);
+	return output;
+}
+
 function fromLocal(extensionPath: string, forWeb: boolean, _disableMangle: boolean): Stream {
 
 	let esbuildConfigFileName = forWeb
@@ -85,11 +102,10 @@ function fromLocal(extensionPath: string, forWeb: boolean, _disableMangle: boole
 	if (hasEsbuild) {
 		const isStandardEsbuild = !esbuildConfigFileName.startsWith('.');
 		input = isStandardEsbuild
-			? es.merge(
-				fromLocalEsbuild(extensionPath, esbuildConfigFileName),
-				// Standard esbuild extensions need a separate type check step
-				...getBuildRootsForExtension(extensionPath).map(root => typeCheckExtensionStream(root, forWeb)),
-			)
+			? serialStreams([
+				() => fromLocalEsbuild(extensionPath, esbuildConfigFileName),
+				...getBuildRootsForExtension(extensionPath).map(root => () => typeCheckExtensionStream(root, forWeb)),
+			])
 			// Extensions with their own build system (e.g. .esbuild.mts) handle type checking internally
 			: fromLocalEsbuild(extensionPath, esbuildConfigFileName);
 		isBundled = true;
@@ -431,11 +447,10 @@ function doPackageLocalExtensionsStream(forWeb: boolean, disableMangle: boolean,
 	);
 
 	const localExtensionsStream = minifyExtensionResources(
-		es.merge(
-			...localExtensionsDescriptions.map(extension => {
-				return fromLocal(extension.path, forWeb, disableMangle)
-					.pipe(rename(p => p.dirname = `extensions/${extension.name}/${p.dirname}`));
-			})
+		serialStreams(
+			localExtensionsDescriptions.map(extension => () =>
+				fromLocal(extension.path, forWeb, disableMangle)
+					.pipe(rename(p => p.dirname = `extensions/${extension.name}/${p.dirname}`)))
 		)
 	);
 
@@ -638,6 +653,17 @@ const esbuildMediaScripts: { script: string; tsconfig: string }[] = [
 ];
 
 export function buildExtensionMedia(isWatch: boolean, outputRoot?: string): Promise<void> {
+	if (!isWatch) {
+		return (async () => {
+			for (const { script, tsconfig } of esbuildMediaScripts) {
+				await esbuildExtensions('esbuilding extension media', false, [{
+					script: path.join(extensionsPath, script),
+					outputRoot: outputRoot ? path.join(root, outputRoot, path.dirname(script)) : undefined,
+				}]);
+				await spawnTsgo(path.join(extensionsPath, tsconfig), { taskName: 'typechecking extension media (tsgo)', noEmit: true });
+			}
+		})();
+	}
 	const esbuildTask = esbuildExtensions('esbuilding extension media', isWatch, esbuildMediaScripts.map(({ script }) => ({
 		script: path.join(extensionsPath, script),
 		outputRoot: outputRoot ? path.join(root, outputRoot, path.dirname(script)) : undefined
