@@ -3274,8 +3274,10 @@ export class ChatResponseHookPart {
 
 export class ChatResponseSystemNotificationPart {
 	value: vscode.MarkdownString;
-	constructor(value: string | vscode.MarkdownString) {
+	icon?: vscode.ThemeIcon;
+	constructor(value: string | vscode.MarkdownString, icon?: vscode.ThemeIcon) {
 		this.value = typeof value === 'string' ? new MarkdownString(value) : value;
+		this.icon = icon;
 	}
 }
 

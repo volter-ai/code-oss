@@ -44,7 +44,7 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `ChatResponseSystemNotificationPart`, added to `ExtendedChatResponseParts` as `chatHooks` adds its part;
   `extensionsApiProposals.ts` registers the proposal; `extHostTypes.ts`, `extHost.api.impl.ts` and
   `extHostTypeConverters.ts` (`ChatResponseSystemNotificationPart`, `ChatResponsePart.from`) make it the
-  workbench's `{kind: 'systemNotification'}` part; `extHostChatAgents2.ts` `push` checks the proposal.
+  workbench's `{kind: 'systemNotification'}` part, with its `icon`; `extHostChatAgents2.ts` `push` checks the proposal.
 - **A chat session's provider can start a request turn itself, and the responses it streams keep their result**
   (proposal `chatSessionResponses`). `src/vscode-dts/vscode.proposed.chatSessionResponses.d.ts` declares
   `ChatSession.onDidStartServerRequest` and `ChatSessionServerRequest`. `extHostChatSessions.ts` subscribes to it,

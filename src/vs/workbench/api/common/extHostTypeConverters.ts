@@ -2861,10 +2861,8 @@ export namespace ChatResponseSystemNotificationPart {
 		return {
 			kind: 'systemNotification',
 			content: MarkdownString.from(part.value),
+			...(part.icon && typeof part.icon.id === 'string' ? { icon: { id: part.icon.id, ...(part.icon.color ? { color: { id: part.icon.color.id } } : {}) } } : {}),
 		};
-	}
-	export function to(part: Dto<IChatSystemNotificationPart>): vscode.ChatResponseSystemNotificationPart {
-		return new types.ChatResponseSystemNotificationPart(MarkdownString.to(part.content));
 	}
 }
 

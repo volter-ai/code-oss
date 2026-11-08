@@ -16,10 +16,17 @@ declare module 'vscode' {
 		value: MarkdownString;
 
 		/**
+		 * The icon beside the notification. Without one it is a check, which suits only a notification that reports
+		 * something completing.
+		 */
+		icon?: ThemeIcon;
+
+		/**
 		 * Creates a new system notification part.
 		 * @param value The notification's text.
+		 * @param icon The icon beside the notification.
 		 */
-		constructor(value: string | MarkdownString);
+		constructor(value: string | MarkdownString, icon?: ThemeIcon);
 	}
 
 	export interface ExtendedChatResponseParts {
