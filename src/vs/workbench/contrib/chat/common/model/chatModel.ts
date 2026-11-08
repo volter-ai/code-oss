@@ -1020,6 +1020,13 @@ export class Response extends AbstractResponse implements IDisposable {
 		} else if (progress.kind === 'externalToolInvocationUpdate') {
 			this._handleExternalToolInvocationUpdate(progress);
 			this._contentChanged(quiet);
+		} else if (progress.kind === 'confirmation' && progress.isUsed) {
+			// A confirmation answered elsewhere retires the open one it answers; it is not drawn again.
+			const idx = this._responseParts.findIndex(part => part.kind === 'confirmation' && !part.isUsed && equals(part.data, progress.data));
+			if (idx !== -1) {
+				this._responseParts[idx] = { ...this._responseParts[idx] as IChatConfirmation, isUsed: true };
+				this._contentChanged(quiet);
+			}
 		} else if (progress.kind === 'progressMessage' && progress.id !== undefined) {
 			const idx = this._responseParts.findIndex(p => p.kind === 'progressMessage' && p.id === progress.id);
 			if (idx === -1) {

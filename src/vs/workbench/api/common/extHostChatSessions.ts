@@ -7,7 +7,7 @@ import type * as vscode from 'vscode';
 import { coalesce } from '../../../base/common/arrays.js';
 import { DeferredPromise } from '../../../base/common/async.js';
 import { CancellationToken, CancellationTokenSource } from '../../../base/common/cancellation.js';
-import { CancellationError } from '../../../base/common/errors.js';
+import { CancellationError, isCancellationError } from '../../../base/common/errors.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { ResourceMap, ResourceSet } from '../../../base/common/map.js';
@@ -19,12 +19,14 @@ import { SymbolKind, SymbolKinds } from '../../../editor/common/languages.js';
 import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import { IChatRequestVariableEntry, IDiagnosticVariableEntryFilterData, ISymbolVariableEntry, PromptFileVariableKind, toPromptFileVariableEntry } from '../../contrib/chat/common/attachments/chatVariableEntries.js';
+import { IChatResponseErrorDetails } from '../../contrib/chat/common/chatService/chatService.js';
 import { IChatSessionProviderOptionItem } from '../../contrib/chat/common/chatSessionsService.js';
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
 import { getChatSessionType, isUntitledChatSession } from '../../contrib/chat/common/model/chatUri.js';
 import { IChatAgentRequest, IChatAgentResult } from '../../contrib/chat/common/participants/chatAgents.js';
+import { isProposedApiEnabled } from '../../services/extensions/common/extensions.js';
 import { Proxied } from '../../services/extensions/common/proxyIdentifier.js';
-import { ChatSessionContentContextDto, ExtHostChatSessionsShape, IChatAgentProgressShape, IChatNewSessionRequestDto, IChatSessionDto, IChatSessionProviderOptions, IChatSessionRequestHistoryItemDto, MainContext, MainThreadChatSessionsShape } from './extHost.protocol.js';
+import { ChatSessionContentContextDto, ExtHostChatSessionsShape, IChatAgentProgressShape, IChatNewSessionRequestDto, IChatSessionDto, IChatSessionProviderOptions, IChatSessionRequestHistoryItemDto, IChatSessionResponseResultDto, MainContext, MainThreadChatSessionsShape } from './extHost.protocol.js';
 import { ChatAgentResponseStream } from './extHostChatAgents2.js';
 import { CommandsConverter, ExtHostCommands } from './extHostCommands.js';
 import { ExtHostLanguageModels } from './extHostLanguageModels.js';
@@ -341,8 +343,12 @@ class ChatSessionItemCollectionImpl implements vscode.ChatSessionItemCollection 
 
 class ExtHostChatSession {
 	private _stream: ChatAgentResponseStream;
-	// Empty map since question carousel is designed for chat agents, not chat sessions
-	private readonly _pendingCarouselResolvers = new Map<string, Map<string, DeferredPromise<Record<string, unknown> | undefined>>>();
+	/** The question carousels this session's response streams pushed, by request id: `$handleQuestionCarouselAnswer` answers them. */
+	readonly pendingCarouselResolvers = new Map<string, Map<string, DeferredPromise<Record<string, unknown> | undefined>>>();
+	/** Cancelled when the user stops the active response, apart from the session's disposal. */
+	activeResponseCts: CancellationTokenSource | undefined;
+	/** Whether a question carousel on this session's streams is answered (`chatSessionResponses`). */
+	answersCarousels = false;
 
 	constructor(
 		public readonly session: vscode.ChatSession,
@@ -352,7 +358,7 @@ class ExtHostChatSession {
 		public readonly commandsConverter: CommandsConverter,
 		public readonly sessionDisposables: DisposableStore
 	) {
-		this._stream = new ChatAgentResponseStream(extension, request, proxy, commandsConverter, sessionDisposables, this._pendingCarouselResolvers, CancellationToken.None);
+		this._stream = new ChatAgentResponseStream(extension, request, proxy, commandsConverter, sessionDisposables, this.pendingCarouselResolvers, CancellationToken.None);
 	}
 
 	get activeResponseStream() {
@@ -360,7 +366,20 @@ class ExtHostChatSession {
 	}
 
 	getActiveRequestStream(request: IChatAgentRequest) {
-		return new ChatAgentResponseStream(this.extension, request, this.proxy, this.commandsConverter, this.sessionDisposables, this._pendingCarouselResolvers, CancellationToken.None);
+		return new ChatAgentResponseStream(this.extension, request, this.proxy, this.commandsConverter, this.sessionDisposables, this.pendingCarouselResolvers, CancellationToken.None);
+	}
+
+	/** A response that ended leaves its unanswered carousels unanswered, as a participant's does (`extHostChatAgents2.ts`). */
+	completeCarousels(requestId?: string): void {
+		for (const [id, resolvers] of this.pendingCarouselResolvers) {
+			if (requestId !== undefined && id !== requestId) {
+				continue;
+			}
+			for (const deferred of resolvers.values()) {
+				deferred.complete(undefined);
+			}
+			this.pendingCarouselResolvers.delete(id);
+		}
 	}
 }
 
@@ -688,7 +707,10 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 
 		const sessionDisposables = new DisposableStore();
 		const id = sessionResource.toString();
-		const chatSession = new ExtHostChatSession(session, provider.extension, {
+		// Only the session the workbench holds now for this resource reaches it: a session provided earlier for the
+		// same resource keeps streaming into nothing rather than into the newer one's responses.
+		const isCurrent = () => this._extHostChatSessions.get(sessionResource)?.sessionObj === chatSession;
+		const chatSession: ExtHostChatSession = new ExtHostChatSession(session, provider.extension, {
 			sessionResource,
 			requestId: 'ongoing',
 			agentId: id,
@@ -697,22 +719,46 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			location: ChatAgentLocation.Chat,
 		}, {
 			$handleProgressChunk: (requestId, chunks) => {
-				return this._proxy.$handleProgressChunk(handle, sessionResource, requestId, chunks);
+				return isCurrent() ? this._proxy.$handleProgressChunk(handle, sessionResource, requestId, chunks) : Promise.resolve();
 			},
 			$handleAnchorResolve: (requestId, requestHandle, anchor) => {
-				this._proxy.$handleAnchorResolve(handle, sessionResource, requestId, requestHandle, anchor);
+				if (isCurrent()) {
+					this._proxy.$handleAnchorResolve(handle, sessionResource, requestId, requestHandle, anchor);
+				}
 			},
 		}, this.commands.converter, sessionDisposables);
 
 		const disposeCts = sessionDisposables.add(new CancellationTokenSource());
+		// A session provided earlier for this resource is not cancelled: its token is its provider's Stop, which would
+		// end the turn this session re-joins (the workbench keeps a running session's content until the user's
+		// interruption, so the earlier one may still be here). Its disposables are released without cancelling it, and
+		// it reaches nothing more (`isCurrent`).
+		this._extHostChatSessions.get(sessionResource)?.sessionObj.sessionDisposables.dispose();
 		this._extHostChatSessions.set(sessionResource, { sessionObj: chatSession, disposeCts });
 
-		// Call activeResponseCallback immediately for best user experience
+		// The active response ends with the ChatResult its callback resolves with, and its questions are answered
+		// (`chatSessionResponses`).
+		const sessionResponses = isProposedApiEnabled(provider.extension, 'chatSessionResponses');
+		chatSession.answersCarousels = sessionResponses;
+
+		// Call activeResponseCallback immediately for best user experience. Stopping the active response cancels its
+		// own token; disposing the session cancels it too. A session a newer one replaced completes nothing there.
 		if (session.activeResponseCallback) {
-			Promise.resolve(session.activeResponseCallback(chatSession.activeResponseStream.apiObject, disposeCts.token)).finally(() => {
-				// complete
-				this._proxy.$handleProgressComplete(handle, sessionResource, 'ongoing');
-			});
+			const activeResponseCts = chatSession.activeResponseCts = sessionDisposables.add(new CancellationTokenSource(disposeCts.token));
+			const complete = (result?: IChatSessionResponseResultDto) => {
+				if (isCurrent()) {
+					this._proxy.$handleProgressComplete(handle, sessionResource, 'ongoing', result);
+				}
+			};
+			Promise.resolve(session.activeResponseCallback(chatSession.activeResponseStream.apiObject, activeResponseCts.token) as Thenable<vscode.ChatResult | void>).then(result => {
+				complete(sessionResponses ? this.convertResponseResult(provider.extension, result) : undefined);
+			}, error => {
+				// (the user's Stop ends the callback with a cancellation, which is no error)
+				if (!isCancellationError(error)) {
+					this._logService.error(error);
+				}
+				complete();
+			}).finally(() => chatSession.completeCarousels('ongoing'));
 		}
 		const { capabilities } = provider;
 		return {
@@ -725,9 +771,9 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			options: session.options,
 			history: session.history.map(turn => {
 				if (turn instanceof extHostTypes.ChatRequestTurn) {
-					return this.convertRequestTurn(turn);
+					return this.convertRequestTurn(turn, sessionResponses);
 				} else {
-					return this.convertResponseTurn(turn as extHostTypes.ChatResponseTurn2, sessionDisposables);
+					return this.convertResponseTurn(turn as extHostTypes.ChatResponseTurn2, sessionDisposables, sessionResponses ? provider.extension : undefined);
 				}
 			})
 		};
@@ -821,8 +867,53 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 	}
 
 	async $interruptChatSessionActiveResponse(providerHandle: number, sessionResource: UriComponents, requestId: string): Promise<void> {
-		const entry = this._extHostChatSessions.get(URI.revive(sessionResource));
-		entry?.disposeCts.cancel();
+		// (the active response, `'ongoing'`, is the only response a session streams)
+		if (requestId === 'ongoing') {
+			this._extHostChatSessions.get(URI.revive(sessionResource))?.sessionObj.activeResponseCts?.cancel();
+		}
+	}
+
+	$handleQuestionCarouselAnswer(resolveId: string, answers: Record<string, unknown> | undefined): void {
+		for (const { sessionObj } of this._extHostChatSessions.values()) {
+			if (!sessionObj.answersCarousels) {
+				continue;
+			}
+			for (const [requestId, resolvers] of sessionObj.pendingCarouselResolvers) {
+				const deferred = resolvers.get(resolveId);
+				if (!deferred) {
+					continue;
+				}
+				deferred.complete(answers);
+				resolvers.delete(resolveId);
+				if (resolvers.size === 0) {
+					sessionObj.pendingCarouselResolvers.delete(requestId);
+				}
+				return;
+			}
+		}
+	}
+
+	/**
+	 * A streamed response's ChatResult as the main thread's result. The error fields `chatParticipantPrivate` owns
+	 * are kept only where it is enabled, as they are for a participant's result (`extHostChatAgents2.ts`).
+	 */
+	private convertResponseResult(extension: IExtensionDescription, result: vscode.ChatResult | void | undefined): IChatSessionResponseResultDto | undefined {
+		if (!result || typeof result !== 'object') {
+			return undefined;
+		}
+		const details = typeof result.details === 'string' ? result.details : undefined;
+		const errorDetails = this.convertErrorDetails(extension, result.errorDetails);
+		return details || errorDetails ? { details, errorDetails } : undefined;
+	}
+
+	private convertErrorDetails(extension: IExtensionDescription, errorDetails: vscode.ChatErrorDetails | undefined): IChatResponseErrorDetails | undefined {
+		if (!errorDetails || typeof errorDetails.message !== 'string') {
+			return undefined;
+		}
+		if (isProposedApiEnabled(extension, 'chatParticipantPrivate')) {
+			return { ...errorDetails };
+		}
+		return { message: errorDetails.message, ...(errorDetails.responseIsFiltered ? { responseIsFiltered: true } : {}) };
 	}
 
 	async $disposeChatSessionContent(providerHandle: number, sessionResource: UriComponents): Promise<void> {
@@ -840,6 +931,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		}
 
 		entry.disposeCts.cancel();
+		entry.sessionObj.completeCarousels();
 		entry.sessionObj.sessionDisposables.dispose();
 		this._extHostChatSessions.delete(resource);
 	}
@@ -1052,9 +1144,14 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		return model;
 	}
 
-	private convertRequestTurn(turn: extHostTypes.ChatRequestTurn) {
+	/**
+	 * @param savedRequests Whether a turn's `systemInitiatedLabel` is kept (`chatSessionResponses`).
+	 */
+	private convertRequestTurn(turn: extHostTypes.ChatRequestTurn, savedRequests = false) {
 		const variables = turn.references.map(ref => this.convertReferenceToVariable(ref));
+		const label = savedRequests ? (turn as vscode.ChatRequestTurn).systemInitiatedLabel : undefined;
 		return {
+			...(typeof label === 'string' && label ? { isSystemInitiated: true, systemInitiatedLabel: label } : {}),
 			type: 'request' as const,
 			id: turn.id,
 			prompt: turn.prompt,
@@ -1123,13 +1220,19 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		};
 	}
 
-	private convertResponseTurn(turn: extHostTypes.ChatResponseTurn2, sessionDisposables: DisposableStore) {
+	/**
+	 * @param resultsOf The extension whose results keep their error (`chatSessionResponses`); without one the
+	 * turn keeps only its details.
+	 */
+	private convertResponseTurn(turn: extHostTypes.ChatResponseTurn2, sessionDisposables: DisposableStore, resultsOf?: IExtensionDescription) {
 		const parts = coalesce(turn.response.map(r => typeConvert.ChatResponsePart.from(r, this.commands.converter, sessionDisposables)));
+		const errorDetails = resultsOf ? this.convertErrorDetails(resultsOf, turn.result?.errorDetails) : undefined;
 		return {
 			type: 'response' as const,
 			parts,
 			participant: turn.participant,
 			details: turn.result?.details,
+			...(errorDetails ? { errorDetails } : {}),
 		};
 	}
 

@@ -43,7 +43,7 @@ import { DEFAULT_EDITOR_ASSOCIATION, SaveReason } from '../../common/editor.js';
 import { IViewBadge } from '../../common/views.js';
 import { IChatAgentRequest, IChatAgentResult } from '../../contrib/chat/common/participants/chatAgents.js';
 import { IChatRequestModeInstructions } from '../../contrib/chat/common/model/chatModel.js';
-import { IChatAgentMarkdownContentWithVulnerability, IChatAutoModeResolutionPart, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatExtensionsContent, IChatExternalToolInvocationUpdate, IChatFollowup, IChatHookPart, IChatMarkdownContent, IChatMoveMessage, IChatMultiDiffDataSerialized, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatTaskDto, IChatTaskResult, IChatTerminalToolInvocationData, IChatTextEdit, IChatThinkingPart, IChatToolInvocationSerialized, IChatTreeData, IChatUserActionEvent, IChatVoiceProgressPart, IChatWarningMessage, IChatInfoMessage, IChatWorkspaceEdit } from '../../contrib/chat/common/chatService/chatService.js';
+import { IChatAgentMarkdownContentWithVulnerability, IChatAutoModeResolutionPart, IChatCodeCitation, IChatCommandButton, IChatConfirmation, IChatContentInlineReference, IChatContentReference, IChatExtensionsContent, IChatExternalToolInvocationUpdate, IChatFollowup, IChatHookPart, IChatMarkdownContent, IChatMoveMessage, IChatMultiDiffDataSerialized, IChatProgressMessage, IChatPullRequestContent, IChatQuestionCarousel, IChatResponseCodeblockUriPart, IChatSystemNotificationPart, IChatTaskDto, IChatTaskResult, IChatTerminalToolInvocationData, IChatTextEdit, IChatThinkingPart, IChatToolInvocationSerialized, IChatTreeData, IChatUserActionEvent, IChatVoiceProgressPart, IChatWarningMessage, IChatInfoMessage, IChatWorkspaceEdit } from '../../contrib/chat/common/chatService/chatService.js';
 import { LocalChatSessionUri } from '../../contrib/chat/common/model/chatUri.js';
 import { ChatRequestToolReferenceEntry, IChatRequestVariableEntry, isElementVariableEntry, isImageVariableEntry, isPromptFileVariableEntry, isPromptTextVariableEntry } from '../../contrib/chat/common/attachments/chatVariableEntries.js';
 import { coerceImageBuffer } from '../../contrib/chat/common/chatImageExtraction.js';
@@ -2656,7 +2656,8 @@ export namespace ChatResponseConfirmationPart {
 			title: part.title,
 			message: MarkdownString.from(part.message),
 			data: part.data,
-			buttons: part.buttons
+			buttons: part.buttons,
+			...(part.isUsed ? { isUsed: true } : {}),
 		};
 	}
 }
@@ -2852,6 +2853,16 @@ export namespace ChatResponseHookPart {
 	}
 	export function to(part: Dto<IChatHookPart>): vscode.ChatResponseHookPart {
 		return new types.ChatResponseHookPart(part.hookType, part.stopReason, part.systemMessage, part.metadata);
+	}
+}
+
+export namespace ChatResponseSystemNotificationPart {
+	export function from(part: vscode.ChatResponseSystemNotificationPart): Dto<IChatSystemNotificationPart> {
+		return {
+			kind: 'systemNotification',
+			content: MarkdownString.from(part.value),
+			...(part.icon && typeof part.icon.id === 'string' ? { icon: { id: part.icon.id, ...(part.icon.color ? { color: { id: part.icon.color.id } } : {}) } } : {}),
+		};
 	}
 }
 
@@ -3400,6 +3411,8 @@ export namespace ChatResponsePart {
 			return ChatResponseThinkingProgressPart.from(part);
 		} else if (part instanceof types.ChatResponseHookPart) {
 			return ChatResponseHookPart.from(part);
+		} else if (part instanceof types.ChatResponseSystemNotificationPart) {
+			return ChatResponseSystemNotificationPart.from(part);
 		} else if (part instanceof types.ChatResponseVoiceProgressPart) {
 			return ChatResponseVoiceProgressPart.from(part);
 		} else if (part instanceof types.ChatResponseFileTreePart) {

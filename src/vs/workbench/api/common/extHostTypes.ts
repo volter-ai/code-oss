@@ -3150,6 +3150,7 @@ export class ChatResponseConfirmationPart {
 	message: string | vscode.MarkdownString;
 	data: any;
 	buttons?: string[];
+	isUsed?: boolean;
 
 	constructor(title: string, message: string | vscode.MarkdownString, data: any, buttons?: string[]) {
 		this.title = title;
@@ -3268,6 +3269,15 @@ export class ChatResponseHookPart {
 		this.stopReason = stopReason;
 		this.systemMessage = systemMessage;
 		this.metadata = metadata;
+	}
+}
+
+export class ChatResponseSystemNotificationPart {
+	value: vscode.MarkdownString;
+	icon?: vscode.ThemeIcon;
+	constructor(value: string | vscode.MarkdownString, icon?: vscode.ThemeIcon) {
+		this.value = typeof value === 'string' ? new MarkdownString(value) : value;
+		this.icon = icon;
 	}
 }
 

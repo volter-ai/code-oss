@@ -61,7 +61,7 @@ import { IChatAgentMetadata, IChatAgentRequest, IChatAgentResult, UserSelectedTo
 import { ICodeMapperRequest, ICodeMapperResult } from '../../contrib/chat/common/editing/chatCodeMapperService.js';
 import { IChatContextItem } from '../../contrib/chat/common/contextContrib/chatContext.js';
 import { IChatProgressHistoryResponseContent, IChatRequestModeInstructions, IChatRequestVariableData } from '../../contrib/chat/common/model/chatModel.js';
-import { ChatResponseClearToPreviousToolInvocationReason, IChatContentInlineReference, IChatExternalEditsDto, IChatFollowup, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatNotebookEdit, IChatProgress, IChatTask, IChatTaskDto, IChatUserActionEvent, IChatVoteAction } from '../../contrib/chat/common/chatService/chatService.js';
+import { ChatResponseClearToPreviousToolInvocationReason, IChatContentInlineReference, IChatExternalEditsDto, IChatFollowup, IChatMultiDiffData, IChatMultiDiffDataSerialized, IChatNotebookEdit, IChatProgress, IChatResponseErrorDetails, IChatTask, IChatTaskDto, IChatUserActionEvent, IChatVoteAction } from '../../contrib/chat/common/chatService/chatService.js';
 import { IChatSessionItem, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem } from '../../contrib/chat/common/chatSessionsService.js';
 import { IChatRequestVariableValue } from '../../contrib/chat/common/attachments/chatVariables.js';
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
@@ -3886,11 +3886,15 @@ export type IChatSessionHistoryItemDto = {
 	variableData?: Dto<IChatRequestVariableData>;
 	modelId?: string;
 	modeInstructions?: Dto<IChatRequestModeInstructions>;
+	/** A saved request no user sent: drawn as a system-initiated request with its label. */
+	isSystemInitiated?: boolean;
+	systemInitiatedLabel?: string;
 } | {
 	type: 'response';
 	parts: IChatProgressDto[];
 	participant: string;
 	details?: string;
+	errorDetails?: IChatResponseErrorDetails;
 };
 
 export type IChatSessionRequestHistoryItemDto = Extract<IChatSessionHistoryItemDto, { type: 'request' }>;
@@ -3945,7 +3949,13 @@ export interface MainThreadChatSessionsShape extends IDisposable {
 
 	$handleProgressChunk(handle: number, sessionResource: UriComponents, requestId: string, chunks: (IChatProgressDto | [IChatProgressDto, number])[]): Promise<void>;
 	$handleAnchorResolve(handle: number, sessionResource: UriComponents, requestId: string, requestHandle: string, anchor: Dto<IChatContentInlineReference>): void;
-	$handleProgressComplete(handle: number, sessionResource: UriComponents, requestId: string): void;
+	$handleProgressComplete(handle: number, sessionResource: UriComponents, requestId: string, result?: IChatSessionResponseResultDto): void;
+}
+
+/** The result a response the session streamed ended with. */
+export interface IChatSessionResponseResultDto {
+	readonly details?: string;
+	readonly errorDetails?: IChatResponseErrorDetails;
 }
 
 export interface ExtHostChatSessionsShape {
@@ -3962,6 +3972,8 @@ export interface ExtHostChatSessionsShape {
 	$forkChatSession(providerHandle: number, sessionResource: UriComponents, request: IChatSessionRequestHistoryItemDto | undefined, token: CancellationToken): Promise<Dto<IChatSessionItem>>;
 	$resolveChatSessionItem(providerHandle: number, sessionResource: UriComponents, token: CancellationToken): Promise<Dto<IChatSessionItem> | undefined>;
 	$provideChatSessionInputState(controllerHandle: number, sessionResource: UriComponents | undefined, token: CancellationToken): Promise<IChatSessionProviderOptionGroup[] | undefined>;
+	/** An answer to a question carousel, which a session's response stream may have pushed (`resolveId` is unique). */
+	$handleQuestionCarouselAnswer(resolveId: string, answers: Record<string, unknown> | undefined): void;
 }
 
 export interface GitRefQueryDto {

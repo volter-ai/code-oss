@@ -1142,6 +1142,11 @@ export class ChatService extends Disposable implements IChatService {
 
 				// Handle completion
 				if (isComplete && lastRequest) {
+					// The result the streamed response ended with: a failed one's error is the response's error.
+					const result = providedSession.resultObs?.get();
+					if (result && lastRequest.response && !lastRequest.response.isComplete) {
+						lastRequest.response.setResult({ ...lastRequest.response.result, ...result });
+					}
 					this._pendingRequests.deleteAndDispose(model.sessionResource);
 					cancellationListener.clear();
 					completeLastResponse(justCompleted);

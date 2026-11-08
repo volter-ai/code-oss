@@ -39,6 +39,34 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   each exclude glob into a regular expression in which a backslash before a digit is a
   back-reference: the watcher threw and every file watch stopped. The only watcher glob in the
   source built from a filesystem path.
+- **A chat response can carry a system notification row** (proposal `chatSystemNotification`).
+  `src/vscode-dts/vscode.proposed.chatSystemNotification.d.ts` declares
+  `ChatResponseSystemNotificationPart`, added to `ExtendedChatResponseParts` as `chatHooks` adds its part;
+  `extensionsApiProposals.ts` registers the proposal; `extHostTypes.ts`, `extHost.api.impl.ts` and
+  `extHostTypeConverters.ts` (`ChatResponseSystemNotificationPart`, `ChatResponsePart.from`) make it the
+  workbench's `{kind: 'systemNotification'}` part, with its `icon`; `extHostChatAgents2.ts` `push` checks the proposal.
+- **A chat session's own responses keep their result, their questions and their saved requests** (proposal
+  `chatSessionResponses`). `src/vscode-dts/vscode.proposed.chatSessionResponses.d.ts` states what it keeps and adds
+  `ChatRequestTurn.systemInitiatedLabel`.
+  - *For a provider with the proposal:* `extHostChatSessions.ts` passes the `ChatResult` the active response resolves
+    with to `$handleProgressComplete`, keeps `errorDetails` in `convertResponseTurn` and the request's label in
+    `convertRequestTurn`, and answers a question carousel on the active response's stream:
+    `mainThreadChatSessions.ts` forwards `onDidReceiveQuestionCarouselAnswer` to `$handleQuestionCarouselAnswer`, by
+    its unique `resolveId` (the test double in `mainThreadChatSessions.test.ts` stubs it). `extHost.protocol.ts`
+    carries the result and the history items' fields; `mainThreadChatSessions.ts` exposes `resultObs`, which
+    `chatServiceImpl.ts` sets on the response as it completes (`chatSessionsService.ts` declares it), and passes the
+    saved request's label to the chat model.
+  - *For every provider:* `extHostChatSessions.ts` gives the active response its own token (stopping it is not the
+    session's disposal); interrupts and completes only the active response (`'ongoing'`), and
+    `mainThreadChatSessions.ts` completes only that one through `$handleProgressComplete`; lets only the session the
+    workbench holds now for a resource reach it (`isCurrent`: its parts and its active response's completion), and
+    releases an earlier one's disposables without cancelling it; and does not log the active response's Stop
+    (a cancellation) as an error.
+- **An extension can retire a confirmation answered elsewhere** (proposal `chatConfirmationResolution`).
+  `src/vscode-dts/vscode.proposed.chatConfirmationResolution.d.ts` adds `ChatResponseConfirmationPart.isUsed`;
+  `extHostTypes.ts` and `extHostTypeConverters.ts` carry it, `extHostChatAgents2.ts` `push` checks the proposal,
+  `chatModel.ts` replaces the response's open confirmation with equal `data` by a used copy, and
+  `chatConfirmationContentPart.ts` re-renders a confirmation that became used.
 
 ## Patches moved from the editor overlay
 
