@@ -912,7 +912,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 				notStarted();
 				return;
 			}
-			this._proxy.$startServerRequest(handle, sessionResource, { requestId, prompt, systemInitiatedLabel }).then(started => {
+			this._proxy.$startServerRequest(handle, sessionResource, { requestId, prompt, systemInitiatedLabel, ...(request.isRequestHidden === true ? { isRequestHidden: true } : {}) }).then(started => {
 				if (started) {
 					this.streamServerRequest(handle, sessionResource, chatSession, request, requestId, prompt, sessionToken);
 				} else {

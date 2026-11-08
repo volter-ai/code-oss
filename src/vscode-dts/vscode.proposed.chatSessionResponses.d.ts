@@ -24,6 +24,12 @@ declare module 'vscode' {
 		readonly systemInitiatedLabel?: string;
 
 		/**
+		 * Set for a turn that nothing before it opened (no prompt, no record the backend names): its request turn
+		 * is hidden and only its response is drawn, as the editor draws an agent host's turn whose request is hidden.
+		 */
+		readonly isRequestHidden?: boolean;
+
+		/**
 		 * Called once the editor has opened the request turn, to stream its response. The response is complete
 		 * once the returned thenable resolves, and a {@link ChatResult} it resolves with is the response's result:
 		 * its `errorDetails` are the response's error. A question carousel pushed to the stream is answered as on a

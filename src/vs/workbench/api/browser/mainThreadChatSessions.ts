@@ -421,6 +421,7 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 			id: request.requestId,
 			prompt: request.prompt,
 			...(request.systemInitiatedLabel ? { isSystemInitiated: true, systemInitiatedLabel: request.systemInitiatedLabel } : {}),
+			...(request.isRequestHidden ? { isRequestHidden: true } : {}),
 		});
 		return true;
 	}

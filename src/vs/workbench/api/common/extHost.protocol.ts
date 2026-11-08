@@ -3968,6 +3968,8 @@ export interface IChatSessionServerRequestDto {
 	readonly prompt: string;
 	/** Set for a request no user sent: drawn as a system-initiated request with this label. */
 	readonly systemInitiatedLabel?: string;
+	/** Set for a turn nothing before it opened: only its response is drawn. */
+	readonly isRequestHidden?: boolean;
 }
 
 export interface ExtHostChatSessionsShape {
