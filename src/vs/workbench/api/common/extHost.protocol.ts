@@ -3886,6 +3886,9 @@ export type IChatSessionHistoryItemDto = {
 	variableData?: Dto<IChatRequestVariableData>;
 	modelId?: string;
 	modeInstructions?: Dto<IChatRequestModeInstructions>;
+	/** A request no user sent: drawn as a system-initiated request with its label. */
+	isSystemInitiated?: boolean;
+	systemInitiatedLabel?: string;
 } | {
 	type: 'response';
 	parts: IChatProgressDto[];
@@ -3949,7 +3952,8 @@ export interface MainThreadChatSessionsShape extends IDisposable {
 	$handleProgressChunk(handle: number, sessionResource: UriComponents, requestId: string, chunks: (IChatProgressDto | [IChatProgressDto, number])[]): Promise<void>;
 	$handleAnchorResolve(handle: number, sessionResource: UriComponents, requestId: string, requestHandle: string, anchor: Dto<IChatContentInlineReference>): void;
 	$handleProgressComplete(handle: number, sessionResource: UriComponents, requestId: string, result?: IChatSessionResponseResultDto): void;
-	$startServerRequest(handle: number, sessionResource: UriComponents, request: IChatSessionServerRequestDto): void;
+	/** Whether the request turn was opened; when it was not, its response is never streamed. */
+	$startServerRequest(handle: number, sessionResource: UriComponents, request: IChatSessionServerRequestDto): Promise<boolean>;
 }
 
 /** The result a response the session streamed ended with. */
@@ -3980,6 +3984,8 @@ export interface ExtHostChatSessionsShape {
 	$forkChatSession(providerHandle: number, sessionResource: UriComponents, request: IChatSessionRequestHistoryItemDto | undefined, token: CancellationToken): Promise<Dto<IChatSessionItem>>;
 	$resolveChatSessionItem(providerHandle: number, sessionResource: UriComponents, token: CancellationToken): Promise<Dto<IChatSessionItem> | undefined>;
 	$provideChatSessionInputState(controllerHandle: number, sessionResource: UriComponents | undefined, token: CancellationToken): Promise<IChatSessionProviderOptionGroup[] | undefined>;
+	/** An answer to a question carousel, which a session's response stream may have pushed (`resolveId` is unique). */
+	$handleQuestionCarouselAnswer(resolveId: string, answers: Record<string, unknown> | undefined): void;
 }
 
 export interface GitRefQueryDto {

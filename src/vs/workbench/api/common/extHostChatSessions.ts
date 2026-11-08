@@ -343,8 +343,10 @@ class ChatSessionItemCollectionImpl implements vscode.ChatSessionItemCollection 
 
 class ExtHostChatSession {
 	private _stream: ChatAgentResponseStream;
-	// Empty map since question carousel is designed for chat agents, not chat sessions
-	private readonly _pendingCarouselResolvers = new Map<string, Map<string, DeferredPromise<Record<string, unknown> | undefined>>>();
+	/** The question carousels this session's response streams pushed, by request id: `$handleQuestionCarouselAnswer` answers them. */
+	readonly pendingCarouselResolvers = new Map<string, Map<string, DeferredPromise<Record<string, unknown> | undefined>>>();
+	/** Cancelled when the user stops the active response, apart from the session's disposal. */
+	activeResponseCts: CancellationTokenSource | undefined;
 
 	constructor(
 		public readonly session: vscode.ChatSession,
@@ -354,7 +356,7 @@ class ExtHostChatSession {
 		public readonly commandsConverter: CommandsConverter,
 		public readonly sessionDisposables: DisposableStore
 	) {
-		this._stream = new ChatAgentResponseStream(extension, request, proxy, commandsConverter, sessionDisposables, this._pendingCarouselResolvers, CancellationToken.None);
+		this._stream = new ChatAgentResponseStream(extension, request, proxy, commandsConverter, sessionDisposables, this.pendingCarouselResolvers, CancellationToken.None);
 	}
 
 	/** The requests the provider started itself (`onDidStartServerRequest`) whose responses are still streaming. */
@@ -365,7 +367,20 @@ class ExtHostChatSession {
 	}
 
 	getActiveRequestStream(request: IChatAgentRequest) {
-		return new ChatAgentResponseStream(this.extension, request, this.proxy, this.commandsConverter, this.sessionDisposables, this._pendingCarouselResolvers, CancellationToken.None);
+		return new ChatAgentResponseStream(this.extension, request, this.proxy, this.commandsConverter, this.sessionDisposables, this.pendingCarouselResolvers, CancellationToken.None);
+	}
+
+	/** A response that ended leaves its unanswered carousels unanswered, as a participant's does (`extHostChatAgents2.ts`). */
+	completeCarousels(requestId?: string): void {
+		for (const [id, resolvers] of this.pendingCarouselResolvers) {
+			if (requestId !== undefined && id !== requestId) {
+				continue;
+			}
+			for (const deferred of resolvers.values()) {
+				deferred.complete(undefined);
+			}
+			this.pendingCarouselResolvers.delete(id);
+		}
 	}
 }
 
@@ -693,7 +708,10 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 
 		const sessionDisposables = new DisposableStore();
 		const id = sessionResource.toString();
-		const chatSession = new ExtHostChatSession(session, provider.extension, {
+		// Only the session the workbench holds now for this resource reaches it: a session provided earlier for the
+		// same resource keeps streaming into nothing rather than into the newer one's responses.
+		const isCurrent = () => this._extHostChatSessions.get(sessionResource)?.sessionObj === chatSession;
+		const chatSession: ExtHostChatSession = new ExtHostChatSession(session, provider.extension, {
 			sessionResource,
 			requestId: 'ongoing',
 			agentId: id,
@@ -702,10 +720,12 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			location: ChatAgentLocation.Chat,
 		}, {
 			$handleProgressChunk: (requestId, chunks) => {
-				return this._proxy.$handleProgressChunk(handle, sessionResource, requestId, chunks);
+				return isCurrent() ? this._proxy.$handleProgressChunk(handle, sessionResource, requestId, chunks) : Promise.resolve();
 			},
 			$handleAnchorResolve: (requestId, requestHandle, anchor) => {
-				this._proxy.$handleAnchorResolve(handle, sessionResource, requestId, requestHandle, anchor);
+				if (isCurrent()) {
+					this._proxy.$handleAnchorResolve(handle, sessionResource, requestId, requestHandle, anchor);
+				}
 			},
 		}, this.commands.converter, sessionDisposables);
 
@@ -715,19 +735,21 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		// Responses this session streams end with the ChatResult their callback resolves with (`chatSessionResponses`).
 		const sessionResponses = isProposedApiEnabled(provider.extension, 'chatSessionResponses');
 
-		// Call activeResponseCallback immediately for best user experience
+		// Call activeResponseCallback immediately for best user experience. Stopping the active response cancels its
+		// own token; disposing the session cancels every response's.
 		if (session.activeResponseCallback) {
-			Promise.resolve(session.activeResponseCallback(chatSession.activeResponseStream.apiObject, disposeCts.token) as Thenable<vscode.ChatResult | void>).then(result => {
+			const activeResponseCts = chatSession.activeResponseCts = sessionDisposables.add(new CancellationTokenSource(disposeCts.token));
+			Promise.resolve(session.activeResponseCallback(chatSession.activeResponseStream.apiObject, activeResponseCts.token) as Thenable<vscode.ChatResult | void>).then(result => {
 				this._proxy.$handleProgressComplete(handle, sessionResource, 'ongoing', sessionResponses ? this.convertResponseResult(provider.extension, result) : undefined);
 			}, error => {
 				this._logService.error(error);
 				this._proxy.$handleProgressComplete(handle, sessionResource, 'ongoing');
-			});
+			}).finally(() => chatSession.completeCarousels('ongoing'));
 		}
 
 		const onDidStartServerRequest = sessionResponses ? session.onDidStartServerRequest : undefined;
 		if (onDidStartServerRequest) {
-			sessionDisposables.add(onDidStartServerRequest(request => this.startServerRequest(handle, sessionResource, chatSession, request, disposeCts.token)));
+			sessionDisposables.add(onDidStartServerRequest(request => this.startServerRequest(handle, sessionResource, chatSession, request, disposeCts.token, isCurrent)));
 		}
 		const { capabilities } = provider;
 		return {
@@ -741,7 +763,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			options: session.options,
 			history: session.history.map(turn => {
 				if (turn instanceof extHostTypes.ChatRequestTurn) {
-					return this.convertRequestTurn(turn);
+					return this.convertRequestTurn(turn, sessionResponses);
 				} else {
 					return this.convertResponseTurn(turn as extHostTypes.ChatResponseTurn2, sessionDisposables, sessionResponses ? provider.extension : undefined);
 				}
@@ -843,16 +865,67 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			serverRequest.cancel();
 			return;
 		}
-		entry?.disposeCts.cancel();
+		if (requestId === 'ongoing') {
+			entry?.sessionObj.activeResponseCts?.cancel();
+			return;
+		}
+		this._logService.trace(`[ExtHostChatSessions] no streaming response ${requestId} to interrupt in ${sessionResource}`);
+	}
+
+	$handleQuestionCarouselAnswer(resolveId: string, answers: Record<string, unknown> | undefined): void {
+		for (const { sessionObj } of this._extHostChatSessions.values()) {
+			for (const [requestId, resolvers] of sessionObj.pendingCarouselResolvers) {
+				const deferred = resolvers.get(resolveId);
+				if (!deferred) {
+					continue;
+				}
+				deferred.complete(answers);
+				resolvers.delete(resolveId);
+				if (resolvers.size === 0) {
+					sessionObj.pendingCarouselResolvers.delete(requestId);
+				}
+				return;
+			}
+		}
 	}
 
 	/**
 	 * Opens a request the provider started itself: the main thread ends the response streaming in the session and
-	 * adds the request turn, then the provider streams that turn's response.
+	 * adds the request turn, then the provider streams that turn's response. A turn the main thread did not open (its
+	 * session is gone or no longer this one) is the provider's to draw elsewhere (`notStartedCallback`).
 	 */
-	private startServerRequest(handle: number, sessionResource: URI, chatSession: ExtHostChatSession, request: vscode.ChatSessionServerRequest, sessionToken: CancellationToken): void {
+	private startServerRequest(handle: number, sessionResource: URI, chatSession: ExtHostChatSession, request: vscode.ChatSessionServerRequest, sessionToken: CancellationToken, isCurrent: () => boolean): void {
 		const requestId = `server-${generateUuid()}`;
 		const prompt = typeof request.prompt === 'string' ? request.prompt : '';
+		const systemInitiatedLabel = typeof request.systemInitiatedLabel === 'string' && request.systemInitiatedLabel ? request.systemInitiatedLabel : undefined;
+		const notStarted = () => {
+			try {
+				request.notStartedCallback?.();
+			} catch (error) {
+				this._logService.error(error);
+			}
+		};
+		// Response streams send their parts in a microtask, so the request starts after one too: parts the provider
+		// pushed to the previous response before this request still reach that response.
+		queueMicrotask(() => {
+			if (sessionToken.isCancellationRequested || !isCurrent()) {
+				notStarted();
+				return;
+			}
+			this._proxy.$startServerRequest(handle, sessionResource, { requestId, prompt, systemInitiatedLabel }).then(started => {
+				if (started) {
+					this.streamServerRequest(handle, sessionResource, chatSession, request, requestId, prompt, sessionToken);
+				} else {
+					notStarted();
+				}
+			}, error => {
+				this._logService.error(error);
+				notStarted();
+			});
+		});
+	}
+
+	private streamServerRequest(handle: number, sessionResource: URI, chatSession: ExtHostChatSession, request: vscode.ChatSessionServerRequest, requestId: string, prompt: string, sessionToken: CancellationToken): void {
 		const cts = new CancellationTokenSource(sessionToken);
 		chatSession.serverRequests.set(requestId, cts);
 		const stream = chatSession.getActiveRequestStream({
@@ -863,10 +936,6 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			variables: { variables: [] },
 			location: ChatAgentLocation.Chat,
 		});
-		// Response streams send their parts in a microtask, so the request starts in one too: parts the provider
-		// pushed to the previous response before this request still reach that response.
-		const systemInitiatedLabel = typeof request.systemInitiatedLabel === 'string' && request.systemInitiatedLabel ? request.systemInitiatedLabel : undefined;
-		queueMicrotask(() => this._proxy.$startServerRequest(handle, sessionResource, { requestId, prompt, systemInitiatedLabel }));
 		let response: Thenable<vscode.ChatResult | void>;
 		try {
 			response = request.responseCallback(stream.apiObject, cts.token);
@@ -880,6 +949,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			this._proxy.$handleProgressComplete(handle, sessionResource, requestId, { errorDetails: { message: error instanceof Error ? error.message : String(error) } });
 		}).finally(() => {
 			stream.close();
+			chatSession.completeCarousels(requestId);
 			chatSession.serverRequests.delete(requestId);
 			cts.dispose();
 		});
@@ -923,6 +993,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		}
 
 		entry.disposeCts.cancel();
+		entry.sessionObj.completeCarousels();
 		entry.sessionObj.sessionDisposables.dispose();
 		this._extHostChatSessions.delete(resource);
 	}
@@ -1135,9 +1206,14 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		return model;
 	}
 
-	private convertRequestTurn(turn: extHostTypes.ChatRequestTurn) {
+	/**
+	 * @param systemInitiated Whether a turn's `systemInitiatedLabel` marks it system-initiated (`chatSessionResponses`).
+	 */
+	private convertRequestTurn(turn: extHostTypes.ChatRequestTurn, systemInitiated = false) {
 		const variables = turn.references.map(ref => this.convertReferenceToVariable(ref));
+		const label = systemInitiated ? (turn as vscode.ChatRequestTurn).systemInitiatedLabel : undefined;
 		return {
+			...(typeof label === 'string' && label ? { isSystemInitiated: true, systemInitiatedLabel: label } : {}),
 			type: 'request' as const,
 			id: turn.id,
 			prompt: turn.prompt,

@@ -55,7 +55,14 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `IChatSession.onDidStartServerRequest` (the event the agent host's server-initiated turns use), ignores parts and
   completion of a request a later one ended, and exposes `resultObs`, which `chatServiceImpl.ts` sets on the
   response when it completes; `chatSessionsService.ts` declares `resultObs`. A request with `systemInitiatedLabel`
-  is the workbench's system-initiated request (`isSystemInitiated`, `systemInitiatedLabel`).
+  is the workbench's system-initiated request (`isSystemInitiated`, `systemInitiatedLabel`), live and, through
+  `ChatRequestTurn.systemInitiatedLabel`, in history. The main thread acknowledges each request it opens
+  (`$startServerRequest` resolves `false` for a session it no longer holds, and the provider's `notStartedCallback`
+  runs) and accepts parts only for the requests it opened; an earlier session for the same resource reaches nothing.
+  The active response has its own token, so stopping it never cancels a later request. A question carousel on a
+  session's stream is answered: `mainThreadChatSessions.ts` forwards `onDidReceiveQuestionCarouselAnswer` to
+  `$handleQuestionCarouselAnswer`, by its unique `resolveId`. `chatServiceImpl.ts` hands Stop and the queue to a
+  request turn the session opens while its participant is still answering.
 - **An extension can retire a confirmation answered elsewhere** (proposal `chatConfirmationResolution`).
   `src/vscode-dts/vscode.proposed.chatConfirmationResolution.d.ts` adds `ChatResponseConfirmationPart.isUsed`;
   `extHostTypes.ts` and `extHostTypeConverters.ts` carry it, `extHostChatAgents2.ts` `push` checks the proposal,

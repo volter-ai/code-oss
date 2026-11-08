@@ -80,6 +80,10 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 	private _currentRequestId = 'ongoing';
 	/** Requests a server request has ended: their late parts and completion no longer reach the session's response. */
 	private readonly _endedRequestIds = new Set<string>();
+	/** The server requests this session opened: no other request id but the active response's reaches it. */
+	private readonly _serverRequestIds = new Set<string>();
+	/** The requests `requestHandler` is answering now. */
+	private readonly _handlerRequestIds = new Set<string>();
 	private _hasServerRequests = false;
 
 	private readonly _pendingProgressChunks = new Map<string, IChatProgress[]>();
@@ -182,6 +186,7 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 						id: turn.id,
 						modelId: turn.modelId,
 						modeInstructions: turn.modeInstructions ? revive(turn.modeInstructions) : undefined,
+						...(turn.isSystemInitiated ? { isSystemInitiated: true, systemInitiatedLabel: turn.systemInitiatedLabel } : {}),
 					} satisfies IChatSessionRequestHistoryItem;
 				}
 
@@ -248,6 +253,7 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 					token: CancellationToken
 				) => {
 					this._inFlightRequestCount++;
+					this._handlerRequestIds.add(request.requestId);
 					// Clear previous progress and mark as active
 					this._progressObservable.set([], undefined);
 					this._isCompleteObservable.set(false, undefined);
@@ -289,6 +295,7 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 					} finally {
 						// Ensure progress observation is cleaned up
 						progressDisposable.dispose();
+						this._handlerRequestIds.delete(request.requestId);
 						this._inFlightRequestCount--;
 						// If a dispose was requested while this request was in flight,
 						// fire the proxy disposal now that the last request has settled.
@@ -339,8 +346,8 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 	 * If the session is not initialized yet, the chunks will be queued.
 	 */
 	handleProgressChunk(requestId: string, progress: IChatProgress[]): void {
-		if (this._endedRequestIds.has(requestId)) {
-			this._logService.trace(`Dropping ${progress.length} progress chunks for ended request ${requestId} of session ${this.sessionResource}`);
+		if (this._endedRequestIds.has(requestId) || !this._streamsHere(requestId)) {
+			this._logService.trace(`Dropping ${progress.length} progress chunks for request ${requestId}, which is not streaming in session ${this.sessionResource}`);
 			return;
 		}
 		if (!this._isInitialized) {
@@ -359,7 +366,7 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 	handleProgressComplete(requestId: string, result?: IChatSessionResponseResultDto): void {
 		// Clean up any pending chunks for this request
 		this._pendingProgressChunks.delete(requestId);
-		if (this._endedRequestIds.delete(requestId)) {
+		if (this._endedRequestIds.delete(requestId) || !this._streamsHere(requestId)) {
 			return;
 		}
 
@@ -385,7 +392,12 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 	 * A request the provider started itself: the response streaming now ends, and the chat model adds the request
 	 * turn (`onDidStartServerRequest`) whose response the following progress belongs to.
 	 */
-	startServerRequest(request: IChatSessionServerRequestDto): void {
+	startServerRequest(request: IChatSessionServerRequestDto): boolean {
+		// (a session that is gone, or whose turns nothing shows, opens none)
+		if (!this._hasServerRequests || !this._isInitialized || this._store.isDisposed || !this._onDidStartServerRequest.hasListeners()) {
+			return false;
+		}
+		this._serverRequestIds.add(request.requestId);
 		if (request.requestId !== this._currentRequestId) {
 			this._endedRequestIds.add(this._currentRequestId);
 			this._currentRequestId = request.requestId;
@@ -401,6 +413,12 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 			prompt: request.prompt,
 			...(request.systemInitiatedLabel ? { isSystemInitiated: true, systemInitiatedLabel: request.systemInitiatedLabel } : {}),
 		});
+		return true;
+	}
+
+	/** The active response's id, a server request this session opened, or a request its `requestHandler` answers. */
+	private _streamsHere(requestId: string): boolean {
+		return requestId === 'ongoing' || this._serverRequestIds.has(requestId) || this._handlerRequestIds.has(requestId);
 	}
 
 	private _addProgress(progress: IChatProgress[]): void {
@@ -791,6 +809,13 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 			}
 		}));
 
+		// A question carousel a session's response stream pushed is answered there (`resolveId` is unique).
+		this._register(this._chatService.onDidReceiveQuestionCarouselAnswer(e => {
+			if (this._activeSessions.size) {
+				this._proxy.$handleQuestionCarouselAnswer(e.resolveId, e.answers);
+			}
+		}));
+
 		this._register(this._agentSessionsService.model.onDidChangeSessionArchivedState(session => {
 			for (const [handle, { chatSessionType }] of this._itemControllerRegistrations) {
 				if (chatSessionType === session.providerType) {
@@ -1101,15 +1126,15 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 		observableSession.handleProgressComplete(requestId, result);
 	}
 
-	$startServerRequest(handle: number, sessionResource: UriComponents, request: IChatSessionServerRequestDto): void {
+	async $startServerRequest(handle: number, sessionResource: UriComponents, request: IChatSessionServerRequestDto): Promise<boolean> {
 		const resource = URI.revive(sessionResource);
 		const observableSession = this._activeSessions.get(resource);
-		if (!observableSession) {
-			this._logService.warn(`No session found for a server request: handle ${handle}, sessionResource ${resource}, requestId ${request.requestId}`);
-			return;
+		if (!observableSession || observableSession.providerHandle !== handle) {
+			this._logService.trace(`No session for a server request: handle ${handle}, sessionResource ${resource}, requestId ${request.requestId}`);
+			return false;
 		}
 
-		observableSession.startServerRequest(request);
+		return observableSession.startServerRequest(request);
 	}
 
 	$handleAnchorResolve(handle: number, sesssionResource: UriComponents, requestId: string, requestHandle: string, anchor: Dto<IChatContentInlineReference>): void {
