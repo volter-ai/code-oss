@@ -54,7 +54,8 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   the history item's `errorDetails`. `mainThreadChatSessions.ts` `ObservableChatSession` fires
   `IChatSession.onDidStartServerRequest` (the event the agent host's server-initiated turns use), ignores parts and
   completion of a request a later one ended, and exposes `resultObs`, which `chatServiceImpl.ts` sets on the
-  response when it completes; `chatSessionsService.ts` declares `resultObs`.
+  response when it completes; `chatSessionsService.ts` declares `resultObs`. A request with `systemInitiatedLabel`
+  is the workbench's system-initiated request (`isSystemInitiated`, `systemInitiatedLabel`).
 - **An extension can retire a confirmation answered elsewhere** (proposal `chatConfirmationResolution`).
   `src/vscode-dts/vscode.proposed.chatConfirmationResolution.d.ts` adds `ChatResponseConfirmationPart.isUsed`;
   `extHostTypes.ts` and `extHostTypeConverters.ts` carry it, `extHostChatAgents2.ts` `push` checks the proposal,

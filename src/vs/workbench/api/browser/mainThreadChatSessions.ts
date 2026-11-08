@@ -396,7 +396,11 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 			this._resultObservable.set(undefined, tx);
 			this._isCompleteObservable.set(false, tx);
 		});
-		this._onDidStartServerRequest.fire({ id: request.requestId, prompt: request.prompt });
+		this._onDidStartServerRequest.fire({
+			id: request.requestId,
+			prompt: request.prompt,
+			...(request.systemInitiatedLabel ? { isSystemInitiated: true, systemInitiatedLabel: request.systemInitiatedLabel } : {}),
+		});
 	}
 
 	private _addProgress(progress: IChatProgress[]): void {

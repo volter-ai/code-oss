@@ -865,7 +865,8 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		});
 		// Response streams send their parts in a microtask, so the request starts in one too: parts the provider
 		// pushed to the previous response before this request still reach that response.
-		queueMicrotask(() => this._proxy.$startServerRequest(handle, sessionResource, { requestId, prompt }));
+		const systemInitiatedLabel = typeof request.systemInitiatedLabel === 'string' && request.systemInitiatedLabel ? request.systemInitiatedLabel : undefined;
+		queueMicrotask(() => this._proxy.$startServerRequest(handle, sessionResource, { requestId, prompt, systemInitiatedLabel }));
 		let response: Thenable<vscode.ChatResult | void>;
 		try {
 			response = request.responseCallback(stream.apiObject, cts.token);

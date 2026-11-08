@@ -3962,6 +3962,8 @@ export interface IChatSessionResponseResultDto {
 export interface IChatSessionServerRequestDto {
 	readonly requestId: string;
 	readonly prompt: string;
+	/** Set for a request no user sent: drawn as a system-initiated request with this label. */
+	readonly systemInitiatedLabel?: string;
 }
 
 export interface ExtHostChatSessionsShape {

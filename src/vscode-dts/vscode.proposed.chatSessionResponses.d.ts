@@ -17,6 +17,12 @@ declare module 'vscode' {
 		readonly prompt: string;
 
 		/**
+		 * Set when no user sent the request (a prompt the provider's scheduler runs): its request turn is then drawn
+		 * as the editor draws a system-initiated request, a notification row with this label in place of the prompt.
+		 */
+		readonly systemInitiatedLabel?: string;
+
+		/**
 		 * Streams the request's response. The response is complete once the returned thenable resolves, and a
 		 * {@link ChatResult} it resolves with is the response's result: its `errorDetails` are the response's
 		 * error. The token is cancelled when the user stops the response or the session is disposed.
