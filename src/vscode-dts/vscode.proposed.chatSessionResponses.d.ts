@@ -51,15 +51,23 @@ declare module 'vscode' {
 		 * ran): it is drawn as a system-initiated request, a notification row with this label.
 		 */
 		systemInitiatedLabel?: string;
+
+		/**
+		 * Set on a request turn in {@link ChatSession.history} that nothing opened: it stays a turn of its own, with its
+		 * request hidden and only its response drawn.
+		 */
+		isRequestHidden?: boolean;
 	}
 
 	export interface ChatSession {
 		/**
-		 * Fires when the provider starts a {@link ChatSessionServerRequest request} in this session. The editor
-		 * ends the response the session is streaming (its {@link ChatSession.activeResponseCallback active response}
-		 * or an earlier server request), adds a request turn with the request's prompt, and calls its
-		 * {@link ChatSessionServerRequest.responseCallback responseCallback} for that turn's response. A response
-		 * the session's participant is writing ends when its request handler returns.
+		 * Fires when the provider starts a {@link ChatSessionServerRequest request} in this session. The editor opens
+		 * requests in the order they fire, each once the response the session is streaming before it (its
+		 * {@link ChatSession.activeResponseCallback active response} or an earlier server request) has completed with
+		 * its result, so a new request turn never ends the previous response early. It then adds a request turn with
+		 * the request's prompt and calls its {@link ChatSessionServerRequest.responseCallback responseCallback} for
+		 * that turn's response. A response the session's participant is writing ends when its request handler
+		 * returns. A session provided later for the same resource replaces this one: this event is no longer heard.
 		 *
 		 * Where this proposal is enabled, the thenable {@link ChatSession.activeResponseCallback} returns may also
 		 * resolve with a {@link ChatResult}, which is the active response's result, a question carousel pushed to

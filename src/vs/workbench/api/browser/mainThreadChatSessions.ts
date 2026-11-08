@@ -187,6 +187,7 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 						modelId: turn.modelId,
 						modeInstructions: turn.modeInstructions ? revive(turn.modeInstructions) : undefined,
 						...(turn.isSystemInitiated ? { isSystemInitiated: true, systemInitiatedLabel: turn.systemInitiatedLabel } : {}),
+						...(turn.isRequestHidden ? { isRequestHidden: true } : {}),
 					} satisfies IChatSessionRequestHistoryItem;
 				}
 
@@ -394,11 +395,42 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 		}
 	}
 
+	/** Settles each server request in the order they arrived, each after the response before it completed. */
+	private _serverRequestOrder: Promise<unknown> = Promise.resolve();
+
 	/**
-	 * A request the provider started itself: the response streaming now ends, and the chat model adds the request
-	 * turn (`onDidStartServerRequest`) whose response the following progress belongs to.
+	 * A request the provider started itself: once the response streaming before it has completed (with its result),
+	 * the chat model adds the request turn (`onDidStartServerRequest`) whose response the following progress belongs
+	 * to. Requests open in the order they arrive, so a new request turn never ends the previous response early.
 	 */
-	startServerRequest(request: IChatSessionServerRequestDto): boolean {
+	startServerRequest(request: IChatSessionServerRequestDto): Promise<boolean> {
+		const open = () => this._previousCompleted().then(() => this._openServerRequest(request));
+		const opened = this._serverRequestOrder.then(open, open);
+		this._serverRequestOrder = opened;
+		return opened;
+	}
+
+	/** Resolves once the response streaming now has completed, or the session is gone. */
+	private _previousCompleted(): Promise<void> {
+		if (this._store.isDisposed || this._isCompleteObservable.get()) {
+			return Promise.resolve();
+		}
+		return new Promise<void>(resolve => {
+			const store = new DisposableStore();
+			const done = () => {
+				store.dispose();
+				resolve();
+			};
+			store.add(this.onWillDispose(done));
+			store.add(autorun(reader => {
+				if (this._isCompleteObservable.read(reader)) {
+					queueMicrotask(done);
+				}
+			}));
+		});
+	}
+
+	private _openServerRequest(request: IChatSessionServerRequestDto): boolean {
 		// (a session that is gone, or whose turns nothing shows, opens none)
 		if (!this._hasServerRequests || !this._isInitialized || this._store.isDisposed || !this._onDidStartServerRequest.hasListeners()) {
 			return false;
@@ -1144,7 +1176,7 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 			return false;
 		}
 
-		return observableSession.startServerRequest(request);
+		return await observableSession.startServerRequest(request);
 	}
 
 	$handleAnchorResolve(handle: number, sesssionResource: UriComponents, requestId: string, requestHandle: string, anchor: Dto<IChatContentInlineReference>): void {

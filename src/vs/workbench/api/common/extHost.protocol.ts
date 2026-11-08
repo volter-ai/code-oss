@@ -3889,6 +3889,8 @@ export type IChatSessionHistoryItemDto = {
 	/** A request no user sent: drawn as a system-initiated request with its label. */
 	isSystemInitiated?: boolean;
 	systemInitiatedLabel?: string;
+	/** A turn nothing opened: only its response is drawn. */
+	isRequestHidden?: boolean;
 } | {
 	type: 'response';
 	parts: IChatProgressDto[];
@@ -3952,7 +3954,8 @@ export interface MainThreadChatSessionsShape extends IDisposable {
 	$handleProgressChunk(handle: number, sessionResource: UriComponents, requestId: string, chunks: (IChatProgressDto | [IChatProgressDto, number])[]): Promise<void>;
 	$handleAnchorResolve(handle: number, sessionResource: UriComponents, requestId: string, requestHandle: string, anchor: Dto<IChatContentInlineReference>): void;
 	$handleProgressComplete(handle: number, sessionResource: UriComponents, requestId: string, result?: IChatSessionResponseResultDto): void;
-	/** Whether the request turn was opened; when it was not, its response is never streamed. */
+	/** Whether the request turn was opened, once the response before it has completed; when it was not, its response
+	 *  is never streamed. */
 	$startServerRequest(handle: number, sessionResource: UriComponents, request: IChatSessionServerRequestDto): Promise<boolean>;
 }
 
