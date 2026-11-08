@@ -9,7 +9,7 @@ import { DeferredPromise } from '../../../base/common/async.js';
 import { CancellationToken, CancellationTokenSource } from '../../../base/common/cancellation.js';
 import { CancellationError } from '../../../base/common/errors.js';
 import { Emitter } from '../../../base/common/event.js';
-import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { ResourceMap, ResourceSet } from '../../../base/common/map.js';
 import { MarshalledId } from '../../../base/common/marshallingIds.js';
 import * as objects from '../../../base/common/objects.js';
@@ -347,6 +347,8 @@ class ExtHostChatSession {
 	readonly pendingCarouselResolvers = new Map<string, Map<string, DeferredPromise<Record<string, unknown> | undefined>>>();
 	/** Cancelled when the user stops the active response, apart from the session's disposal. */
 	activeResponseCts: CancellationTokenSource | undefined;
+	/** The listener of the provider's `onDidStartServerRequest`, dropped when a newer session for the resource replaces this one. */
+	serverRequestSubscription: IDisposable | undefined;
 
 	constructor(
 		public readonly session: vscode.ChatSession,
@@ -730,6 +732,8 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		}, this.commands.converter, sessionDisposables);
 
 		const disposeCts = sessionDisposables.add(new CancellationTokenSource());
+		// (a session provided earlier for this resource opens no more request turns: the newer one does)
+		this._extHostChatSessions.get(sessionResource)?.sessionObj.serverRequestSubscription?.dispose();
 		this._extHostChatSessions.set(sessionResource, { sessionObj: chatSession, disposeCts });
 
 		// Responses this session streams end with the ChatResult their callback resolves with (`chatSessionResponses`).
@@ -749,7 +753,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 
 		const onDidStartServerRequest = sessionResponses ? session.onDidStartServerRequest : undefined;
 		if (onDidStartServerRequest) {
-			sessionDisposables.add(onDidStartServerRequest(request => this.startServerRequest(handle, sessionResource, chatSession, request, disposeCts.token, isCurrent)));
+			chatSession.serverRequestSubscription = sessionDisposables.add(onDidStartServerRequest(request => this.startServerRequest(handle, sessionResource, chatSession, request, disposeCts.token, isCurrent)));
 		}
 		const { capabilities } = provider;
 		return {
@@ -1212,8 +1216,10 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 	private convertRequestTurn(turn: extHostTypes.ChatRequestTurn, systemInitiated = false) {
 		const variables = turn.references.map(ref => this.convertReferenceToVariable(ref));
 		const label = systemInitiated ? (turn as vscode.ChatRequestTurn).systemInitiatedLabel : undefined;
+		const hidden = systemInitiated && (turn as vscode.ChatRequestTurn).isRequestHidden === true;
 		return {
 			...(typeof label === 'string' && label ? { isSystemInitiated: true, systemInitiatedLabel: label } : {}),
+			...(hidden ? { isRequestHidden: true } : {}),
 			type: 'request' as const,
 			id: turn.id,
 			prompt: turn.prompt,

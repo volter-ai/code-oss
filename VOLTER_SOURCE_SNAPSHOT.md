@@ -56,10 +56,11 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   completion of a request a later one ended, and exposes `resultObs`, which `chatServiceImpl.ts` sets on the
   response when it completes; `chatSessionsService.ts` declares `resultObs`. A request with `systemInitiatedLabel`
   is the workbench's system-initiated request (`isSystemInitiated`, `systemInitiatedLabel`), and one with
-  `isRequestHidden` its hidden-request turn; live and, through
-  `ChatRequestTurn.systemInitiatedLabel`, in history. The main thread acknowledges each request it opens
+  `isRequestHidden` its hidden-request turn; live and, through `ChatRequestTurn.isRequestHidden` and
+  `ChatRequestTurn.systemInitiatedLabel`, in history. The main thread opens requests in order, each once the response before it has completed, and acknowledges each request it opens
   (`$startServerRequest` resolves `false` for a session it no longer holds, and the provider's `notStartedCallback`
-  runs) and accepts parts only for the requests it opened; an earlier session for the same resource reaches nothing.
+  runs) and accepts parts only for the requests it opened; an earlier session for the same resource reaches nothing
+  and its request listener is dropped.
   The active response has its own token, so stopping it never cancels a later request. A question carousel on a
   session's stream is answered: `mainThreadChatSessions.ts` forwards `onDidReceiveQuestionCarouselAnswer` to
   `$handleQuestionCarouselAnswer`, by its unique `resolveId` (the test double in `mainThreadChatSessions.test.ts`
