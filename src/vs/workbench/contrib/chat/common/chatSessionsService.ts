@@ -15,7 +15,7 @@ import { isRemoteAgentHostSessionType } from '../../../../platform/agentHost/com
 import { createDecorator, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { LOCAL_AGENT_HOST_SCHEME_PREFIX } from '../../../../platform/agentHost/common/agentHostConnectionsService.js';
-import { IChatAgentAttachmentCapabilities, IChatAgentRequest } from './participants/chatAgents.js';
+import { IChatAgentAttachmentCapabilities, IChatAgentRequest, IChatAgentResult } from './participants/chatAgents.js';
 import { IChatEditingSession } from './editing/chatEditingService.js';
 import { ChatRequestSource, IChatRequestModeInstructions, IChatRequestVariableData, ISerializableChatModelInputState } from './model/chatModel.js';
 import { IChatRequestOrigin } from './chatRequestOrigin.js';
@@ -431,6 +431,11 @@ export interface IChatSession extends IDisposable {
 
 	readonly progressObs?: IObservable<IChatProgress[]>;
 	readonly isCompleteObs?: IObservable<boolean>;
+	/**
+	 * The result of the response streaming through {@link progressObs}, set before {@link isCompleteObs}
+	 * becomes true: its `errorDetails` are the response's error.
+	 */
+	readonly resultObs?: IObservable<Pick<IChatAgentResult, 'details' | 'errorDetails'> | undefined>;
 	readonly isReadOnly?: IObservable<boolean>;
 	readonly interruptActiveResponseCallback?: () => Promise<boolean>;
 

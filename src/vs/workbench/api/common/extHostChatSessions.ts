@@ -19,12 +19,14 @@ import { SymbolKind, SymbolKinds } from '../../../editor/common/languages.js';
 import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import { IChatRequestVariableEntry, IDiagnosticVariableEntryFilterData, ISymbolVariableEntry, PromptFileVariableKind, toPromptFileVariableEntry } from '../../contrib/chat/common/attachments/chatVariableEntries.js';
+import { IChatResponseErrorDetails } from '../../contrib/chat/common/chatService/chatService.js';
 import { IChatSessionProviderOptionItem } from '../../contrib/chat/common/chatSessionsService.js';
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
 import { getChatSessionType, isUntitledChatSession } from '../../contrib/chat/common/model/chatUri.js';
 import { IChatAgentRequest, IChatAgentResult } from '../../contrib/chat/common/participants/chatAgents.js';
+import { isProposedApiEnabled } from '../../services/extensions/common/extensions.js';
 import { Proxied } from '../../services/extensions/common/proxyIdentifier.js';
-import { ChatSessionContentContextDto, ExtHostChatSessionsShape, IChatAgentProgressShape, IChatNewSessionRequestDto, IChatSessionDto, IChatSessionProviderOptions, IChatSessionRequestHistoryItemDto, MainContext, MainThreadChatSessionsShape } from './extHost.protocol.js';
+import { ChatSessionContentContextDto, ExtHostChatSessionsShape, IChatAgentProgressShape, IChatNewSessionRequestDto, IChatSessionDto, IChatSessionProviderOptions, IChatSessionRequestHistoryItemDto, IChatSessionResponseResultDto, MainContext, MainThreadChatSessionsShape } from './extHost.protocol.js';
 import { ChatAgentResponseStream } from './extHostChatAgents2.js';
 import { CommandsConverter, ExtHostCommands } from './extHostCommands.js';
 import { ExtHostLanguageModels } from './extHostLanguageModels.js';
@@ -354,6 +356,9 @@ class ExtHostChatSession {
 	) {
 		this._stream = new ChatAgentResponseStream(extension, request, proxy, commandsConverter, sessionDisposables, this._pendingCarouselResolvers, CancellationToken.None);
 	}
+
+	/** The requests the provider started itself (`onDidStartServerRequest`) whose responses are still streaming. */
+	readonly serverRequests = new Map</* requestId */ string, CancellationTokenSource>();
 
 	get activeResponseStream() {
 		return this._stream;
@@ -707,12 +712,22 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		const disposeCts = sessionDisposables.add(new CancellationTokenSource());
 		this._extHostChatSessions.set(sessionResource, { sessionObj: chatSession, disposeCts });
 
+		// Responses this session streams end with the ChatResult their callback resolves with (`chatSessionResponses`).
+		const sessionResponses = isProposedApiEnabled(provider.extension, 'chatSessionResponses');
+
 		// Call activeResponseCallback immediately for best user experience
 		if (session.activeResponseCallback) {
-			Promise.resolve(session.activeResponseCallback(chatSession.activeResponseStream.apiObject, disposeCts.token)).finally(() => {
-				// complete
+			Promise.resolve(session.activeResponseCallback(chatSession.activeResponseStream.apiObject, disposeCts.token) as Thenable<vscode.ChatResult | void>).then(result => {
+				this._proxy.$handleProgressComplete(handle, sessionResource, 'ongoing', sessionResponses ? this.convertResponseResult(provider.extension, result) : undefined);
+			}, error => {
+				this._logService.error(error);
 				this._proxy.$handleProgressComplete(handle, sessionResource, 'ongoing');
 			});
+		}
+
+		const onDidStartServerRequest = sessionResponses ? session.onDidStartServerRequest : undefined;
+		if (onDidStartServerRequest) {
+			sessionDisposables.add(onDidStartServerRequest(request => this.startServerRequest(handle, sessionResource, chatSession, request, disposeCts.token)));
 		}
 		const { capabilities } = provider;
 		return {
@@ -721,13 +736,14 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			hasActiveResponseCallback: !!session.activeResponseCallback,
 			hasRequestHandler: !!session.requestHandler,
 			hasForkHandler: !!controllerData?.controller.forkHandler || !!session.forkHandler,
+			hasServerRequests: !!onDidStartServerRequest,
 			supportsInterruption: !!capabilities?.supportsInterruptions,
 			options: session.options,
 			history: session.history.map(turn => {
 				if (turn instanceof extHostTypes.ChatRequestTurn) {
 					return this.convertRequestTurn(turn);
 				} else {
-					return this.convertResponseTurn(turn as extHostTypes.ChatResponseTurn2, sessionDisposables);
+					return this.convertResponseTurn(turn as extHostTypes.ChatResponseTurn2, sessionDisposables, sessionResponses ? provider.extension : undefined);
 				}
 			})
 		};
@@ -822,7 +838,73 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 
 	async $interruptChatSessionActiveResponse(providerHandle: number, sessionResource: UriComponents, requestId: string): Promise<void> {
 		const entry = this._extHostChatSessions.get(URI.revive(sessionResource));
+		const serverRequest = entry?.sessionObj.serverRequests.get(requestId);
+		if (serverRequest) {
+			serverRequest.cancel();
+			return;
+		}
 		entry?.disposeCts.cancel();
+	}
+
+	/**
+	 * Opens a request the provider started itself: the main thread ends the response streaming in the session and
+	 * adds the request turn, then the provider streams that turn's response.
+	 */
+	private startServerRequest(handle: number, sessionResource: URI, chatSession: ExtHostChatSession, request: vscode.ChatSessionServerRequest, sessionToken: CancellationToken): void {
+		const requestId = `server-${generateUuid()}`;
+		const prompt = typeof request.prompt === 'string' ? request.prompt : '';
+		const cts = new CancellationTokenSource(sessionToken);
+		chatSession.serverRequests.set(requestId, cts);
+		const stream = chatSession.getActiveRequestStream({
+			sessionResource,
+			requestId,
+			agentId: sessionResource.toString(),
+			message: prompt,
+			variables: { variables: [] },
+			location: ChatAgentLocation.Chat,
+		});
+		// Response streams send their parts in a microtask, so the request starts in one too: parts the provider
+		// pushed to the previous response before this request still reach that response.
+		queueMicrotask(() => this._proxy.$startServerRequest(handle, sessionResource, { requestId, prompt }));
+		let response: Thenable<vscode.ChatResult | void>;
+		try {
+			response = request.responseCallback(stream.apiObject, cts.token);
+		} catch (error) {
+			response = Promise.reject(error);
+		}
+		Promise.resolve(response).then(result => {
+			this._proxy.$handleProgressComplete(handle, sessionResource, requestId, this.convertResponseResult(chatSession.extension, result));
+		}, error => {
+			this._logService.error(error);
+			this._proxy.$handleProgressComplete(handle, sessionResource, requestId, { errorDetails: { message: error instanceof Error ? error.message : String(error) } });
+		}).finally(() => {
+			stream.close();
+			chatSession.serverRequests.delete(requestId);
+			cts.dispose();
+		});
+	}
+
+	/**
+	 * A streamed response's ChatResult as the main thread's result. The error fields `chatParticipantPrivate` owns
+	 * are kept only where it is enabled, as they are for a participant's result (`extHostChatAgents2.ts`).
+	 */
+	private convertResponseResult(extension: IExtensionDescription, result: vscode.ChatResult | void | undefined): IChatSessionResponseResultDto | undefined {
+		if (!result || typeof result !== 'object') {
+			return undefined;
+		}
+		const details = typeof result.details === 'string' ? result.details : undefined;
+		const errorDetails = this.convertErrorDetails(extension, result.errorDetails);
+		return details || errorDetails ? { details, errorDetails } : undefined;
+	}
+
+	private convertErrorDetails(extension: IExtensionDescription, errorDetails: vscode.ChatErrorDetails | undefined): IChatResponseErrorDetails | undefined {
+		if (!errorDetails || typeof errorDetails.message !== 'string') {
+			return undefined;
+		}
+		if (isProposedApiEnabled(extension, 'chatParticipantPrivate')) {
+			return { ...errorDetails };
+		}
+		return { message: errorDetails.message, ...(errorDetails.responseIsFiltered ? { responseIsFiltered: true } : {}) };
 	}
 
 	async $disposeChatSessionContent(providerHandle: number, sessionResource: UriComponents): Promise<void> {
@@ -1123,13 +1205,19 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		};
 	}
 
-	private convertResponseTurn(turn: extHostTypes.ChatResponseTurn2, sessionDisposables: DisposableStore) {
+	/**
+	 * @param resultsOf The extension whose results keep their error (`chatSessionResponses`); without one the
+	 * turn keeps only its details.
+	 */
+	private convertResponseTurn(turn: extHostTypes.ChatResponseTurn2, sessionDisposables: DisposableStore, resultsOf?: IExtensionDescription) {
 		const parts = coalesce(turn.response.map(r => typeConvert.ChatResponsePart.from(r, this.commands.converter, sessionDisposables)));
+		const errorDetails = resultsOf ? this.convertErrorDetails(resultsOf, turn.result?.errorDetails) : undefined;
 		return {
 			type: 'response' as const,
 			parts,
 			participant: turn.participant,
 			details: turn.result?.details,
+			...(errorDetails ? { errorDetails } : {}),
 		};
 	}
 

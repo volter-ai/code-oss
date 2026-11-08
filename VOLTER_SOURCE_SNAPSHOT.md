@@ -45,6 +45,16 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `extensionsApiProposals.ts` registers the proposal; `extHostTypes.ts`, `extHost.api.impl.ts` and
   `extHostTypeConverters.ts` (`ChatResponseSystemNotificationPart`, `ChatResponsePart.from`) make it the
   workbench's `{kind: 'systemNotification'}` part; `extHostChatAgents2.ts` `push` checks the proposal.
+- **A chat session's provider can start a request turn itself, and the responses it streams keep their result**
+  (proposal `chatSessionResponses`). `src/vscode-dts/vscode.proposed.chatSessionResponses.d.ts` declares
+  `ChatSession.onDidStartServerRequest` and `ChatSessionServerRequest`. `extHostChatSessions.ts` subscribes to it,
+  streams each request's response under its own request id, cancels it from `$interruptChatSessionActiveResponse`,
+  passes the `ChatResult` an active response or a server request resolves with to `$handleProgressComplete`, and
+  keeps `errorDetails` in `convertResponseTurn`. `extHost.protocol.ts` carries `$startServerRequest`, the result and
+  the history item's `errorDetails`. `mainThreadChatSessions.ts` `ObservableChatSession` fires
+  `IChatSession.onDidStartServerRequest` (the event the agent host's server-initiated turns use), ignores parts and
+  completion of a request a later one ended, and exposes `resultObs`, which `chatServiceImpl.ts` sets on the
+  response when it completes; `chatSessionsService.ts` declares `resultObs`.
 
 ## Patches moved from the editor overlay
 
