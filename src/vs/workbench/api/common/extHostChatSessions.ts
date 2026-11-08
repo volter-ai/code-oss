@@ -9,7 +9,7 @@ import { DeferredPromise } from '../../../base/common/async.js';
 import { CancellationToken, CancellationTokenSource } from '../../../base/common/cancellation.js';
 import { CancellationError } from '../../../base/common/errors.js';
 import { Emitter } from '../../../base/common/event.js';
-import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { ResourceMap, ResourceSet } from '../../../base/common/map.js';
 import { MarshalledId } from '../../../base/common/marshallingIds.js';
 import * as objects from '../../../base/common/objects.js';
@@ -347,8 +347,6 @@ class ExtHostChatSession {
 	readonly pendingCarouselResolvers = new Map<string, Map<string, DeferredPromise<Record<string, unknown> | undefined>>>();
 	/** Cancelled when the user stops the active response, apart from the session's disposal. */
 	activeResponseCts: CancellationTokenSource | undefined;
-	/** The listener of the provider's `onDidStartServerRequest`, dropped when a newer session for the resource replaces this one. */
-	serverRequestSubscription: IDisposable | undefined;
 
 	constructor(
 		public readonly session: vscode.ChatSession,
@@ -360,9 +358,6 @@ class ExtHostChatSession {
 	) {
 		this._stream = new ChatAgentResponseStream(extension, request, proxy, commandsConverter, sessionDisposables, this.pendingCarouselResolvers, CancellationToken.None);
 	}
-
-	/** The requests the provider started itself (`onDidStartServerRequest`) whose responses are still streaming. */
-	readonly serverRequests = new Map</* requestId */ string, CancellationTokenSource>();
 
 	get activeResponseStream() {
 		return this._stream;
@@ -732,28 +727,26 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		}, this.commands.converter, sessionDisposables);
 
 		const disposeCts = sessionDisposables.add(new CancellationTokenSource());
-		// (a session provided earlier for this resource opens no more request turns: the newer one does)
-		this._extHostChatSessions.get(sessionResource)?.sessionObj.serverRequestSubscription?.dispose();
 		this._extHostChatSessions.set(sessionResource, { sessionObj: chatSession, disposeCts });
 
-		// Responses this session streams end with the ChatResult their callback resolves with (`chatSessionResponses`).
+		// The active response ends with the ChatResult its callback resolves with (`chatSessionResponses`).
 		const sessionResponses = isProposedApiEnabled(provider.extension, 'chatSessionResponses');
 
 		// Call activeResponseCallback immediately for best user experience. Stopping the active response cancels its
-		// own token; disposing the session cancels every response's.
+		// own token; disposing the session cancels it too. A session a newer one replaced completes nothing there.
 		if (session.activeResponseCallback) {
 			const activeResponseCts = chatSession.activeResponseCts = sessionDisposables.add(new CancellationTokenSource(disposeCts.token));
+			const complete = (result?: IChatSessionResponseResultDto) => {
+				if (isCurrent()) {
+					this._proxy.$handleProgressComplete(handle, sessionResource, 'ongoing', result);
+				}
+			};
 			Promise.resolve(session.activeResponseCallback(chatSession.activeResponseStream.apiObject, activeResponseCts.token) as Thenable<vscode.ChatResult | void>).then(result => {
-				this._proxy.$handleProgressComplete(handle, sessionResource, 'ongoing', sessionResponses ? this.convertResponseResult(provider.extension, result) : undefined);
+				complete(sessionResponses ? this.convertResponseResult(provider.extension, result) : undefined);
 			}, error => {
 				this._logService.error(error);
-				this._proxy.$handleProgressComplete(handle, sessionResource, 'ongoing');
+				complete();
 			}).finally(() => chatSession.completeCarousels('ongoing'));
-		}
-
-		const onDidStartServerRequest = sessionResponses ? session.onDidStartServerRequest : undefined;
-		if (onDidStartServerRequest) {
-			chatSession.serverRequestSubscription = sessionDisposables.add(onDidStartServerRequest(request => this.startServerRequest(handle, sessionResource, chatSession, request, disposeCts.token, isCurrent)));
 		}
 		const { capabilities } = provider;
 		return {
@@ -762,7 +755,6 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			hasActiveResponseCallback: !!session.activeResponseCallback,
 			hasRequestHandler: !!session.requestHandler,
 			hasForkHandler: !!controllerData?.controller.forkHandler || !!session.forkHandler,
-			hasServerRequests: !!onDidStartServerRequest,
 			supportsInterruption: !!capabilities?.supportsInterruptions,
 			options: session.options,
 			history: session.history.map(turn => {
@@ -864,11 +856,6 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 
 	async $interruptChatSessionActiveResponse(providerHandle: number, sessionResource: UriComponents, requestId: string): Promise<void> {
 		const entry = this._extHostChatSessions.get(URI.revive(sessionResource));
-		const serverRequest = entry?.sessionObj.serverRequests.get(requestId);
-		if (serverRequest) {
-			serverRequest.cancel();
-			return;
-		}
 		if (requestId === 'ongoing') {
 			entry?.sessionObj.activeResponseCts?.cancel();
 			return;
@@ -891,72 +878,6 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 				return;
 			}
 		}
-	}
-
-	/**
-	 * Opens a request the provider started itself: the main thread ends the response streaming in the session and
-	 * adds the request turn, then the provider streams that turn's response. A turn the main thread did not open (its
-	 * session is gone or no longer this one) is the provider's to draw elsewhere (`notStartedCallback`).
-	 */
-	private startServerRequest(handle: number, sessionResource: URI, chatSession: ExtHostChatSession, request: vscode.ChatSessionServerRequest, sessionToken: CancellationToken, isCurrent: () => boolean): void {
-		const requestId = `server-${generateUuid()}`;
-		const prompt = typeof request.prompt === 'string' ? request.prompt : '';
-		const systemInitiatedLabel = typeof request.systemInitiatedLabel === 'string' && request.systemInitiatedLabel ? request.systemInitiatedLabel : undefined;
-		const notStarted = () => {
-			try {
-				request.notStartedCallback?.();
-			} catch (error) {
-				this._logService.error(error);
-			}
-		};
-		// Response streams send their parts in a microtask, so the request starts after one too: parts the provider
-		// pushed to the previous response before this request still reach that response.
-		queueMicrotask(() => {
-			if (sessionToken.isCancellationRequested || !isCurrent()) {
-				notStarted();
-				return;
-			}
-			this._proxy.$startServerRequest(handle, sessionResource, { requestId, prompt, systemInitiatedLabel, ...(request.isRequestHidden === true ? { isRequestHidden: true } : {}) }).then(started => {
-				if (started) {
-					this.streamServerRequest(handle, sessionResource, chatSession, request, requestId, prompt, sessionToken);
-				} else {
-					notStarted();
-				}
-			}, error => {
-				this._logService.error(error);
-				notStarted();
-			});
-		});
-	}
-
-	private streamServerRequest(handle: number, sessionResource: URI, chatSession: ExtHostChatSession, request: vscode.ChatSessionServerRequest, requestId: string, prompt: string, sessionToken: CancellationToken): void {
-		const cts = new CancellationTokenSource(sessionToken);
-		chatSession.serverRequests.set(requestId, cts);
-		const stream = chatSession.getActiveRequestStream({
-			sessionResource,
-			requestId,
-			agentId: sessionResource.toString(),
-			message: prompt,
-			variables: { variables: [] },
-			location: ChatAgentLocation.Chat,
-		});
-		let response: Thenable<vscode.ChatResult | void>;
-		try {
-			response = request.responseCallback(stream.apiObject, cts.token);
-		} catch (error) {
-			response = Promise.reject(error);
-		}
-		Promise.resolve(response).then(result => {
-			this._proxy.$handleProgressComplete(handle, sessionResource, requestId, this.convertResponseResult(chatSession.extension, result));
-		}, error => {
-			this._logService.error(error);
-			this._proxy.$handleProgressComplete(handle, sessionResource, requestId, { errorDetails: { message: error instanceof Error ? error.message : String(error) } });
-		}).finally(() => {
-			stream.close();
-			chatSession.completeCarousels(requestId);
-			chatSession.serverRequests.delete(requestId);
-			cts.dispose();
-		});
 	}
 
 	/**
@@ -1211,12 +1132,12 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 	}
 
 	/**
-	 * @param systemInitiated Whether a turn's `systemInitiatedLabel` marks it system-initiated (`chatSessionResponses`).
+	 * @param savedRequests Whether a turn's `systemInitiatedLabel` and `isRequestHidden` are kept (`chatSessionResponses`).
 	 */
-	private convertRequestTurn(turn: extHostTypes.ChatRequestTurn, systemInitiated = false) {
+	private convertRequestTurn(turn: extHostTypes.ChatRequestTurn, savedRequests = false) {
 		const variables = turn.references.map(ref => this.convertReferenceToVariable(ref));
-		const label = systemInitiated ? (turn as vscode.ChatRequestTurn).systemInitiatedLabel : undefined;
-		const hidden = systemInitiated && (turn as vscode.ChatRequestTurn).isRequestHidden === true;
+		const label = savedRequests ? (turn as vscode.ChatRequestTurn).systemInitiatedLabel : undefined;
+		const hidden = savedRequests && (turn as vscode.ChatRequestTurn).isRequestHidden === true;
 		return {
 			...(typeof label === 'string' && label ? { isSystemInitiated: true, systemInitiatedLabel: label } : {}),
 			...(hidden ? { isRequestHidden: true } : {}),

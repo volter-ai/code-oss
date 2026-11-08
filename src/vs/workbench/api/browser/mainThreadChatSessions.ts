@@ -30,7 +30,7 @@ import { ChatEditorInput } from '../../contrib/chat/browser/widgetHosts/editor/c
 import { IChatRequestVariableEntry } from '../../contrib/chat/common/attachments/chatVariableEntries.js';
 import { IChatDebugService } from '../../contrib/chat/common/chatDebugService.js';
 import { IChatContentInlineReference, IChatDetail, IChatProgress, IChatService, IChatSessionTiming } from '../../contrib/chat/common/chatService/chatService.js';
-import { ChatSessionOptionsMap, ChatSessionStatus, IChatNewSessionRequest, IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionItemController, IChatSessionItemsDelta, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionRequestHistoryItem, IChatSessionServerRequest, IChatSessionsService, ReadonlyChatSessionOptionsMap } from '../../contrib/chat/common/chatSessionsService.js';
+import { ChatSessionOptionsMap, ChatSessionStatus, IChatNewSessionRequest, IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionItemController, IChatSessionItemsDelta, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionRequestHistoryItem, IChatSessionsService, ReadonlyChatSessionOptionsMap } from '../../contrib/chat/common/chatSessionsService.js';
 import { ChatAgentLocation } from '../../contrib/chat/common/constants.js';
 import { IChatModel } from '../../contrib/chat/common/model/chatModel.js';
 import { getChatSessionType } from '../../contrib/chat/common/model/chatUri.js';
@@ -41,7 +41,7 @@ import { IEditorGroupsService } from '../../services/editor/common/editorGroupsS
 import { IEditorService } from '../../services/editor/common/editorService.js';
 import { extHostNamedCustomer, IExtHostContext } from '../../services/extensions/common/extHostCustomers.js';
 import { Dto } from '../../services/extensions/common/proxyIdentifier.js';
-import { ChatSessionContentContextDto, ExtHostChatSessionsShape, ExtHostContext, IChatProgressDto, IChatSessionHistoryItemDto, IChatSessionItemsChange, IChatSessionRequestHistoryItemDto, IChatSessionResponseResultDto, IChatSessionServerRequestDto, MainContext, MainThreadChatSessionsShape } from '../common/extHost.protocol.js';
+import { ChatSessionContentContextDto, ExtHostChatSessionsShape, ExtHostContext, IChatProgressDto, IChatSessionHistoryItemDto, IChatSessionItemsChange, IChatSessionRequestHistoryItemDto, IChatSessionResponseResultDto, MainContext, MainThreadChatSessionsShape } from '../common/extHost.protocol.js';
 
 function stringOrMarkdownEqual(a: string | IMarkdownString | undefined, b: string | IMarkdownString | undefined): boolean {
 	if (a === b) {
@@ -72,19 +72,6 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 
 	private readonly _onWillDispose = new Emitter<void>();
 	readonly onWillDispose = this._onWillDispose.event;
-
-	private readonly _onDidStartServerRequest = this._register(new Emitter<IChatSessionServerRequest>());
-	readonly onDidStartServerRequest = this._onDidStartServerRequest.event;
-
-	/** The request whose response streams through {@link progressObs}: the active response, then each server request. */
-	private _currentRequestId = 'ongoing';
-	/** Requests a server request has ended: their late parts and completion no longer reach the session's response. */
-	private readonly _endedRequestIds = new Set<string>();
-	/** The server requests this session opened: no other request id but the active response's reaches it. */
-	private readonly _serverRequestIds = new Set<string>();
-	/** The requests `requestHandler` is answering now. */
-	private readonly _handlerRequestIds = new Set<string>();
-	private _hasServerRequests = false;
 
 	private readonly _pendingProgressChunks = new Map<string, IChatProgress[]>();
 	private _isInitialized = false;
@@ -200,17 +187,14 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 				};
 			}));
 
-			this._hasServerRequests = !!sessionContent.hasServerRequests;
-			// A session whose provider starts requests itself streams responses even when none is running now,
-			// so the stop button reaches them.
-			if ((sessionContent.hasActiveResponseCallback || sessionContent.hasServerRequests) && !this.interruptActiveResponseCallback) {
+			if (sessionContent.hasActiveResponseCallback && !this.interruptActiveResponseCallback) {
 				this.interruptActiveResponseCallback = async () => {
 					const confirmInterrupt = () => {
 						if (this._disposalPending) {
 							this._proxy.$disposeChatSessionContent(this._providerHandle, this.sessionResource);
 							this._disposalPending = false;
 						}
-						this._proxy.$interruptChatSessionActiveResponse(this._providerHandle, this.sessionResource, this._currentRequestId);
+						this._proxy.$interruptChatSessionActiveResponse(this._providerHandle, this.sessionResource, 'ongoing');
 						return true;
 					};
 
@@ -254,7 +238,6 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 					token: CancellationToken
 				) => {
 					this._inFlightRequestCount++;
-					this._handlerRequestIds.add(request.requestId);
 					// Clear previous progress and mark as active
 					this._progressObservable.set([], undefined);
 					this._isCompleteObservable.set(false, undefined);
@@ -296,7 +279,6 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 					} finally {
 						// Ensure progress observation is cleaned up
 						progressDisposable.dispose();
-						this._handlerRequestIds.delete(request.requestId);
 						this._inFlightRequestCount--;
 						// If a dispose was requested while this request was in flight,
 						// fire the proxy disposal now that the last request has settled.
@@ -330,9 +312,8 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 			}
 			this._pendingProgressChunks.clear();
 
-			// If session has no active response callback and no request handler, mark it as complete. A session that
-			// starts its own requests has no response running until it starts one.
-			if (!hasAnyCapability || (!hasActiveResponse && sessionContent.hasServerRequests)) {
+			// If session has no active response callback and no request handler, mark it as complete
+			if (!hasAnyCapability) {
 				this._isCompleteObservable.set(true, undefined);
 			}
 
@@ -347,10 +328,6 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 	 * If the session is not initialized yet, the chunks will be queued.
 	 */
 	handleProgressChunk(requestId: string, progress: IChatProgress[]): void {
-		if (this._endedRequestIds.has(requestId) || !this._streamsHere(requestId)) {
-			this._logService.trace(`Dropping ${progress.length} progress chunks for request ${requestId}, which is not streaming in session ${this.sessionResource}`);
-			return;
-		}
 		if (!this._isInitialized) {
 			const existing = this._pendingProgressChunks.get(requestId) || [];
 			this._pendingProgressChunks.set(requestId, [...existing, ...progress]);
@@ -367,15 +344,10 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 	handleProgressComplete(requestId: string, result?: IChatSessionResponseResultDto): void {
 		// Clean up any pending chunks for this request
 		this._pendingProgressChunks.delete(requestId);
-		// (a request ends once: its id is forgotten, and its late parts reach nothing)
-		if (this._endedRequestIds.delete(requestId)) {
-			this._serverRequestIds.delete(requestId);
+		// (only the active response completes through here: no other request's completion ends it)
+		if (requestId !== 'ongoing') {
 			return;
 		}
-		if (!this._streamsHere(requestId)) {
-			return;
-		}
-		this._serverRequestIds.delete(requestId);
 
 		if (this._isInitialized) {
 			// Don't mark as complete if user canceled the interruption
@@ -393,74 +365,6 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 				this._interruptionWasCanceled = false;
 			}
 		}
-	}
-
-	/** Settles each server request in the order they arrived, each after the response before it completed. */
-	private _serverRequestOrder: Promise<unknown> = Promise.resolve();
-
-	/**
-	 * A request the provider started itself: once the response streaming before it has completed (with its result),
-	 * the chat model adds the request turn (`onDidStartServerRequest`) whose response the following progress belongs
-	 * to. Requests open in the order they arrive, so a new request turn never ends the previous response early.
-	 */
-	startServerRequest(request: IChatSessionServerRequestDto): Promise<boolean> {
-		const open = () => this._previousCompleted().then(() => this._openServerRequest(request));
-		const opened = this._serverRequestOrder.then(open, open);
-		this._serverRequestOrder = opened;
-		return opened;
-	}
-
-	/** Resolves once the response streaming now has completed, or the session is gone. */
-	private _previousCompleted(): Promise<void> {
-		if (this._store.isDisposed || this._isCompleteObservable.get()) {
-			return Promise.resolve();
-		}
-		return new Promise<void>(resolve => {
-			const store = new DisposableStore();
-			const done = () => {
-				store.dispose();
-				resolve();
-			};
-			store.add(this.onWillDispose(done));
-			store.add(autorun(reader => {
-				if (this._isCompleteObservable.read(reader)) {
-					queueMicrotask(done);
-				}
-			}));
-		});
-	}
-
-	private _openServerRequest(request: IChatSessionServerRequestDto): boolean {
-		// (a session that is gone, or whose turns nothing shows, opens none)
-		if (!this._hasServerRequests || !this._isInitialized || this._store.isDisposed || !this._onDidStartServerRequest.hasListeners()) {
-			return false;
-		}
-		this._serverRequestIds.add(request.requestId);
-		if (request.requestId !== this._currentRequestId) {
-			// (only a response still streaming has a completion yet to come, which must not end the new one)
-			if (!this._isCompleteObservable.get()) {
-				this._endedRequestIds.add(this._currentRequestId);
-			}
-			this._currentRequestId = request.requestId;
-		}
-		this._interruptionWasCanceled = false;
-		transaction(tx => {
-			this._progressObservable.set([], tx);
-			this._resultObservable.set(undefined, tx);
-			this._isCompleteObservable.set(false, tx);
-		});
-		this._onDidStartServerRequest.fire({
-			id: request.requestId,
-			prompt: request.prompt,
-			...(request.systemInitiatedLabel ? { isSystemInitiated: true, systemInitiatedLabel: request.systemInitiatedLabel } : {}),
-			...(request.isRequestHidden ? { isRequestHidden: true } : {}),
-		});
-		return true;
-	}
-
-	/** The active response's id, a server request this session opened, or a request its `requestHandler` answers. */
-	private _streamsHere(requestId: string): boolean {
-		return requestId === 'ongoing' || this._serverRequestIds.has(requestId) || this._handlerRequestIds.has(requestId);
 	}
 
 	private _addProgress(progress: IChatProgress[]): void {
@@ -494,9 +398,7 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 
 		// If this session has an active response callback and disposal is happening,
 		// defer the actual session content disposal until we know the user's choice
-		// (a session that starts its own requests has the interrupt callback while idle too: only a running
-		// response waits for the user's choice)
-		if (this.interruptActiveResponseCallback && !this._interruptionWasCanceled && (!this._hasServerRequests || !this._isCompleteObservable.get())) {
+		if (this.interruptActiveResponseCallback && !this._interruptionWasCanceled) {
 			this._disposalPending = true;
 			// The actual disposal will happen in the interruption callback based on user's choice
 		} else if (this._inFlightRequestCount > 0) {
@@ -1166,17 +1068,6 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 		}
 
 		observableSession.handleProgressComplete(requestId, result);
-	}
-
-	async $startServerRequest(handle: number, sessionResource: UriComponents, request: IChatSessionServerRequestDto): Promise<boolean> {
-		const resource = URI.revive(sessionResource);
-		const observableSession = this._activeSessions.get(resource);
-		if (!observableSession || observableSession.providerHandle !== handle) {
-			this._logService.trace(`No session for a server request: handle ${handle}, sessionResource ${resource}, requestId ${request.requestId}`);
-			return false;
-		}
-
-		return await observableSession.startServerRequest(request);
 	}
 
 	$handleAnchorResolve(handle: number, sesssionResource: UriComponents, requestId: string, requestHandle: string, anchor: Dto<IChatContentInlineReference>): void {

@@ -5,45 +5,15 @@
 
 declare module 'vscode' {
 
-	/**
-	 * A turn a chat session's backend starts on its own rather than one the editor sends to the session's
-	 * participant: a prompt its scheduler runs, input from another client that starts a turn while none runs, a
-	 * turn it starts after the previous one ended. The editor shows it as a request turn of its own, as it shows a
-	 * turn an agent host starts. Input a running turn takes in is that turn's, never a request of its own.
+	/*
+	 * What a chat session's own responses keep, where this proposal is enabled:
+	 *
+	 * - The thenable {@link ChatSession.activeResponseCallback} returns may resolve with a {@link ChatResult}: it is
+	 *   the active response's result, so its `errorDetails` are that response's error.
+	 * - A {@link ChatResponseTurn2} in {@link ChatSession.history} keeps the `errorDetails` of its result.
+	 * - A question carousel pushed to the active response's stream is answered, as on a participant's stream.
+	 * - A {@link ChatRequestTurn} in {@link ChatSession.history} keeps the two fields below.
 	 */
-	export interface ChatSessionServerRequest {
-		/**
-		 * The request's prompt: the text of its request turn.
-		 */
-		readonly prompt: string;
-
-		/**
-		 * Set when no user sent the request (a prompt the provider's scheduler runs): its request turn is then drawn
-		 * as the editor draws a system-initiated request, a notification row with this label in place of the prompt.
-		 */
-		readonly systemInitiatedLabel?: string;
-
-		/**
-		 * Set for a turn that nothing before it opened (no prompt, no record the backend names): its request turn
-		 * is hidden and only its response is drawn, as the editor draws an agent host's turn whose request is hidden.
-		 */
-		readonly isRequestHidden?: boolean;
-
-		/**
-		 * Called once the editor has opened the request turn, to stream its response. The response is complete
-		 * once the returned thenable resolves, and a {@link ChatResult} it resolves with is the response's result:
-		 * its `errorDetails` are the response's error. A question carousel pushed to the stream is answered as on a
-		 * participant's stream. The token is cancelled when the user stops the response or the session is disposed.
-		 */
-		readonly responseCallback: (stream: ChatResponseStream, token: CancellationToken) => Thenable<ChatResult | void>;
-
-		/**
-		 * Called instead of {@link ChatSessionServerRequest.responseCallback responseCallback} when the editor did
-		 * not open the request turn (the session is no longer shown): the provider draws the request where it is
-		 * writing now.
-		 */
-		readonly notStartedCallback?: () => void;
-	}
 
 	export interface ChatRequestTurn {
 		/**
@@ -57,23 +27,5 @@ declare module 'vscode' {
 		 * request hidden and only its response drawn.
 		 */
 		isRequestHidden?: boolean;
-	}
-
-	export interface ChatSession {
-		/**
-		 * Fires when the provider starts a {@link ChatSessionServerRequest request} in this session. The editor opens
-		 * requests in the order they fire, each once the response the session is streaming before it (its
-		 * {@link ChatSession.activeResponseCallback active response} or an earlier server request) has completed with
-		 * its result, so a new request turn never ends the previous response early. It then adds a request turn with
-		 * the request's prompt and calls its {@link ChatSessionServerRequest.responseCallback responseCallback} for
-		 * that turn's response. A response the session's participant is writing ends when its request handler
-		 * returns. A session provided later for the same resource replaces this one: this event is no longer heard.
-		 *
-		 * Where this proposal is enabled, the thenable {@link ChatSession.activeResponseCallback} returns may also
-		 * resolve with a {@link ChatResult}, which is the active response's result, a question carousel pushed to
-		 * the active response's stream is answered, and a {@link ChatResponseTurn2} in {@link ChatSession.history}
-		 * keeps the `errorDetails` of its result.
-		 */
-		readonly onDidStartServerRequest?: Event<ChatSessionServerRequest>;
 	}
 }

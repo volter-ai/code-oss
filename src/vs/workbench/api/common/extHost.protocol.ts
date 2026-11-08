@@ -3886,10 +3886,10 @@ export type IChatSessionHistoryItemDto = {
 	variableData?: Dto<IChatRequestVariableData>;
 	modelId?: string;
 	modeInstructions?: Dto<IChatRequestModeInstructions>;
-	/** A request no user sent: drawn as a system-initiated request with its label. */
+	/** A saved request no user sent: drawn as a system-initiated request with its label. */
 	isSystemInitiated?: boolean;
 	systemInitiatedLabel?: string;
-	/** A turn nothing opened: only its response is drawn. */
+	/** A saved turn nothing opened: only its response is drawn. */
 	isRequestHidden?: boolean;
 } | {
 	type: 'response';
@@ -3921,8 +3921,6 @@ export interface IChatSessionDto {
 	hasActiveResponseCallback: boolean;
 	hasRequestHandler: boolean;
 	hasForkHandler: boolean;
-	/** The provider can start requests in this session itself (`onDidStartServerRequest`). */
-	hasServerRequests?: boolean;
 	supportsInterruption: boolean;
 	options?: Record<string, string | IChatSessionProviderOptionItem>;
 }
@@ -3954,25 +3952,12 @@ export interface MainThreadChatSessionsShape extends IDisposable {
 	$handleProgressChunk(handle: number, sessionResource: UriComponents, requestId: string, chunks: (IChatProgressDto | [IChatProgressDto, number])[]): Promise<void>;
 	$handleAnchorResolve(handle: number, sessionResource: UriComponents, requestId: string, requestHandle: string, anchor: Dto<IChatContentInlineReference>): void;
 	$handleProgressComplete(handle: number, sessionResource: UriComponents, requestId: string, result?: IChatSessionResponseResultDto): void;
-	/** Whether the request turn was opened, once the response before it has completed; when it was not, its response
-	 *  is never streamed. */
-	$startServerRequest(handle: number, sessionResource: UriComponents, request: IChatSessionServerRequestDto): Promise<boolean>;
 }
 
 /** The result a response the session streamed ended with. */
 export interface IChatSessionResponseResultDto {
 	readonly details?: string;
 	readonly errorDetails?: IChatResponseErrorDetails;
-}
-
-/** A request the session's provider started itself. Its response streams with `requestId`. */
-export interface IChatSessionServerRequestDto {
-	readonly requestId: string;
-	readonly prompt: string;
-	/** Set for a request no user sent: drawn as a system-initiated request with this label. */
-	readonly systemInitiatedLabel?: string;
-	/** Set for a turn nothing before it opened: only its response is drawn. */
-	readonly isRequestHidden?: boolean;
 }
 
 export interface ExtHostChatSessionsShape {

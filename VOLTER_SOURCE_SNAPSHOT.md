@@ -45,24 +45,17 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `extensionsApiProposals.ts` registers the proposal; `extHostTypes.ts`, `extHost.api.impl.ts` and
   `extHostTypeConverters.ts` (`ChatResponseSystemNotificationPart`, `ChatResponsePart.from`) make it the
   workbench's `{kind: 'systemNotification'}` part, with its `icon`; `extHostChatAgents2.ts` `push` checks the proposal.
-- **A chat session's provider can start a request turn itself, and the responses it streams keep their result**
-  (proposal `chatSessionResponses`). `src/vscode-dts/vscode.proposed.chatSessionResponses.d.ts` declares
-  `ChatSession.onDidStartServerRequest` and `ChatSessionServerRequest`. `extHostChatSessions.ts` subscribes to it,
-  streams each request's response under its own request id, cancels it from `$interruptChatSessionActiveResponse`,
-  passes the `ChatResult` an active response or a server request resolves with to `$handleProgressComplete`, and
-  keeps `errorDetails` in `convertResponseTurn`. `extHost.protocol.ts` carries `$startServerRequest`, the result and
-  the history item's `errorDetails`. `mainThreadChatSessions.ts` `ObservableChatSession` fires
-  `IChatSession.onDidStartServerRequest` (the event the agent host's server-initiated turns use), ignores parts and
-  completion of a request a later one ended, and exposes `resultObs`, which `chatServiceImpl.ts` sets on the
-  response when it completes; `chatSessionsService.ts` declares `resultObs`. A request with `systemInitiatedLabel`
-  is the workbench's system-initiated request (`isSystemInitiated`, `systemInitiatedLabel`), and one with
-  `isRequestHidden` its hidden-request turn; live and, through `ChatRequestTurn.isRequestHidden` and
-  `ChatRequestTurn.systemInitiatedLabel`, in history. The main thread opens requests in order, each once the response before it has completed, and acknowledges each request it opens
-  (`$startServerRequest` resolves `false` for a session it no longer holds, and the provider's `notStartedCallback`
-  runs) and accepts parts only for the requests it opened; an earlier session for the same resource reaches nothing
-  and its request listener is dropped.
-  The active response has its own token, so stopping it never cancels a later request. A question carousel on a
-  session's stream is answered: `mainThreadChatSessions.ts` forwards `onDidReceiveQuestionCarouselAnswer` to
+- **A chat session's own responses keep their result, their questions and their saved requests** (proposal
+  `chatSessionResponses`). `src/vscode-dts/vscode.proposed.chatSessionResponses.d.ts` states what it keeps and adds
+  `ChatRequestTurn.systemInitiatedLabel` and `ChatRequestTurn.isRequestHidden`. `extHostChatSessions.ts` passes the
+  `ChatResult` the active response resolves with to `$handleProgressComplete`, keeps `errorDetails` in
+  `convertResponseTurn` and the two request fields in `convertRequestTurn`, gives the active response its own token
+  (stopping it is not the session's disposal), and lets only the session the workbench holds now for a resource reach
+  it (its parts and its active response's completion). `extHost.protocol.ts` carries the result and the history items'
+  fields. `mainThreadChatSessions.ts` `ObservableChatSession` completes only the active response through
+  `$handleProgressComplete`, exposes `resultObs`, which `chatServiceImpl.ts` sets on the response as it completes
+  (`chatSessionsService.ts` declares it), and passes the saved request fields to the chat model. A question carousel
+  on a session's stream is answered: `mainThreadChatSessions.ts` forwards `onDidReceiveQuestionCarouselAnswer` to
   `$handleQuestionCarouselAnswer`, by its unique `resolveId` (the test double in `mainThreadChatSessions.test.ts`
   stubs it).
 - **An extension can retire a confirmation answered elsewhere** (proposal `chatConfirmationResolution`).
