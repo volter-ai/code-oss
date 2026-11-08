@@ -366,9 +366,15 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 	handleProgressComplete(requestId: string, result?: IChatSessionResponseResultDto): void {
 		// Clean up any pending chunks for this request
 		this._pendingProgressChunks.delete(requestId);
-		if (this._endedRequestIds.delete(requestId) || !this._streamsHere(requestId)) {
+		// (a request ends once: its id is forgotten, and its late parts reach nothing)
+		if (this._endedRequestIds.delete(requestId)) {
+			this._serverRequestIds.delete(requestId);
 			return;
 		}
+		if (!this._streamsHere(requestId)) {
+			return;
+		}
+		this._serverRequestIds.delete(requestId);
 
 		if (this._isInitialized) {
 			// Don't mark as complete if user canceled the interruption
@@ -399,7 +405,10 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 		}
 		this._serverRequestIds.add(request.requestId);
 		if (request.requestId !== this._currentRequestId) {
-			this._endedRequestIds.add(this._currentRequestId);
+			// (only a response still streaming has a completion yet to come, which must not end the new one)
+			if (!this._isCompleteObservable.get()) {
+				this._endedRequestIds.add(this._currentRequestId);
+			}
 			this._currentRequestId = request.requestId;
 		}
 		this._interruptionWasCanceled = false;

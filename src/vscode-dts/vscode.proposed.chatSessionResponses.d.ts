@@ -6,9 +6,10 @@
 declare module 'vscode' {
 
 	/**
-	 * A request a chat session's provider starts itself rather than one the editor sends to the session's
-	 * participant: input that reached the session from another client, a prompt the provider's backend runs
-	 * on its own. The editor shows it as a request turn of its own, as it shows a turn an agent host starts.
+	 * A turn a chat session's backend starts on its own rather than one the editor sends to the session's
+	 * participant: a prompt its scheduler runs, input from another client that starts a turn while none runs, a
+	 * turn it starts after the previous one ended. The editor shows it as a request turn of its own, as it shows a
+	 * turn an agent host starts. Input a running turn takes in is that turn's, never a request of its own.
 	 */
 	export interface ChatSessionServerRequest {
 		/**

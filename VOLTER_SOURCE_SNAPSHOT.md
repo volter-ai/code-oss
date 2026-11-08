@@ -61,8 +61,8 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   runs) and accepts parts only for the requests it opened; an earlier session for the same resource reaches nothing.
   The active response has its own token, so stopping it never cancels a later request. A question carousel on a
   session's stream is answered: `mainThreadChatSessions.ts` forwards `onDidReceiveQuestionCarouselAnswer` to
-  `$handleQuestionCarouselAnswer`, by its unique `resolveId`. `chatServiceImpl.ts` hands Stop and the queue to a
-  request turn the session opens while its participant is still answering.
+  `$handleQuestionCarouselAnswer`, by its unique `resolveId` (the test double in `mainThreadChatSessions.test.ts`
+  stubs it).
 - **An extension can retire a confirmation answered elsewhere** (proposal `chatConfirmationResolution`).
   `src/vscode-dts/vscode.proposed.chatConfirmationResolution.d.ts` adds `ChatResponseConfirmationPart.isUsed`;
   `extHostTypes.ts` and `extHostTypeConverters.ts` carry it, `extHostChatAgents2.ts` `push` checks the proposal,
