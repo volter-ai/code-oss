@@ -729,9 +729,11 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		}, this.commands.converter, sessionDisposables);
 
 		const disposeCts = sessionDisposables.add(new CancellationTokenSource());
-		// A session provided earlier for this resource is left running, not cancelled: its token is its provider's Stop,
-		// which would end the turn this session re-joins (the workbench keeps a running session's content until the
-		// user's interruption, so the earlier one may still be here). It reaches nothing more (`isCurrent`).
+		// A session provided earlier for this resource is not cancelled: its token is its provider's Stop, which would
+		// end the turn this session re-joins (the workbench keeps a running session's content until the user's
+		// interruption, so the earlier one may still be here). Its disposables are released without cancelling it, and
+		// it reaches nothing more (`isCurrent`).
+		this._extHostChatSessions.get(sessionResource)?.sessionObj.sessionDisposables.dispose();
 		this._extHostChatSessions.set(sessionResource, { sessionObj: chatSession, disposeCts });
 
 		// The active response ends with the ChatResult its callback resolves with, and its questions are answered
