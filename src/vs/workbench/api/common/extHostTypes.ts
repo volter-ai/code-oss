@@ -3271,6 +3271,13 @@ export class ChatResponseHookPart {
 	}
 }
 
+export class ChatResponseSystemNotificationPart {
+	value: vscode.MarkdownString;
+	constructor(value: string | vscode.MarkdownString) {
+		this.value = typeof value === 'string' ? new MarkdownString(value) : value;
+	}
+}
+
 export type ChatResponseVoiceProgressStage = 'investigating' | 'planning' | 'editing' | 'validating' | 'recovering';
 
 export class ChatResponseVoiceProgressPart {

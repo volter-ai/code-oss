@@ -39,6 +39,12 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   each exclude glob into a regular expression in which a backslash before a digit is a
   back-reference: the watcher threw and every file watch stopped. The only watcher glob in the
   source built from a filesystem path.
+- **A chat response can carry a system notification row** (proposal `chatSystemNotification`).
+  `src/vscode-dts/vscode.proposed.chatSystemNotification.d.ts` declares
+  `ChatResponseSystemNotificationPart`, added to `ExtendedChatResponseParts` as `chatHooks` adds its part;
+  `extensionsApiProposals.ts` registers the proposal; `extHostTypes.ts`, `extHost.api.impl.ts` and
+  `extHostTypeConverters.ts` (`ChatResponseSystemNotificationPart`, `ChatResponsePart.from`) make it the
+  workbench's `{kind: 'systemNotification'}` part; `extHostChatAgents2.ts` `push` checks the proposal.
 
 ## Patches moved from the editor overlay
 

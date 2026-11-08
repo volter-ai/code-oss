@@ -411,6 +411,9 @@ export class ChatAgentResponseStream {
 					) {
 						checkProposedApiEnabled(that._extension, 'chatParticipantAdditions');
 					}
+					if (part instanceof extHostTypes.ChatResponseSystemNotificationPart) {
+						checkProposedApiEnabled(that._extension, 'chatSystemNotification');
+					}
 
 					if (part instanceof extHostTypes.ChatResponseReferencePart) {
 						// Ensure variable reference values get fixed up
