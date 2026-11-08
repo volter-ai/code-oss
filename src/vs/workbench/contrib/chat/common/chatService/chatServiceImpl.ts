@@ -1075,20 +1075,6 @@ export class ChatService extends Disposable implements IChatService {
 					// Reset progress tracking for the new turn
 					lastProgressLength = 0;
 
-					// A request the session's participant is still answering ends when its handler returns: this request
-					// is the one Stop and the queue wait on from now, so the participant's finishing neither drops its
-					// tracking nor dequeues the next message.
-					const answering = this._pendingRequests.get(model.sessionResource);
-					if (answering && !this._syntheticPendingRequests.has(answering)) {
-						this._pendingRequests.deleteAndLeak(model.sessionResource);
-						const release = () => answering.dispose();
-						if (answering.responseCompletePromise) {
-							answering.responseCompletePromise.then(release, release);
-						} else {
-							release();
-						}
-					}
-
 					// Ensure cancellation tracking is active
 					ensureCancellationTracking();
 				}));
@@ -2036,9 +2022,8 @@ export class ChatService extends Disposable implements IChatService {
 				this._pendingRequests.deleteAndDispose(model.sessionResource);
 				this.telemetryService.publicLog2<ChatPendingRequestChangeEvent, ChatPendingRequestChangeClassification>(ChatPendingRequestChangeEventName, { action: 'remove', source: 'sendRequestComplete', requestId: cancellableRequest.requestId, chatSessionId: chatSessionResourceToId(model.sessionResource) });
 			}
-			// Process the next pending request from the queue if any, unless another request (a turn the session
-			// started while this one finished) is in progress now
-			if (shouldProcessPending && !this._pendingRequests.has(model.sessionResource)) {
+			// Process the next pending request from the queue if any
+			if (shouldProcessPending) {
 				this.processNextPendingRequest(model);
 			}
 		});
