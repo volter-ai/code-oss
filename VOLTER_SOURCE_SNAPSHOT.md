@@ -47,15 +47,15 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   workbench's `{kind: 'systemNotification'}` part, with its `icon`; `extHostChatAgents2.ts` `push` checks the proposal.
 - **A chat session's own responses keep their result, their questions and their saved requests** (proposal
   `chatSessionResponses`). `src/vscode-dts/vscode.proposed.chatSessionResponses.d.ts` states what it keeps and adds
-  `ChatRequestTurn.systemInitiatedLabel` and `ChatRequestTurn.isRequestHidden`. `extHostChatSessions.ts` passes the
+  `ChatRequestTurn.systemInitiatedLabel`. `extHostChatSessions.ts` passes the
   `ChatResult` the active response resolves with to `$handleProgressComplete`, keeps `errorDetails` in
-  `convertResponseTurn` and the two request fields in `convertRequestTurn`, gives the active response its own token
+  `convertResponseTurn` and the request's label in `convertRequestTurn`, gives the active response its own token
   (stopping it is not the session's disposal), and lets only the session the workbench holds now for a resource reach
   it (its parts and its active response's completion). `extHost.protocol.ts` carries the result and the history items'
   fields. `mainThreadChatSessions.ts` `ObservableChatSession` completes only the active response through
   `$handleProgressComplete`, exposes `resultObs`, which `chatServiceImpl.ts` sets on the response as it completes
-  (`chatSessionsService.ts` declares it), and passes the saved request fields to the chat model. A question carousel
-  on a session's stream is answered: `mainThreadChatSessions.ts` forwards `onDidReceiveQuestionCarouselAnswer` to
+  (`chatSessionsService.ts` declares it), and passes the saved request's label to the chat model. A question carousel
+  on the active response's stream of a session whose provider has the proposal is answered: `mainThreadChatSessions.ts` forwards `onDidReceiveQuestionCarouselAnswer` to
   `$handleQuestionCarouselAnswer`, by its unique `resolveId` (the test double in `mainThreadChatSessions.test.ts`
   stubs it).
 - **An extension can retire a confirmation answered elsewhere** (proposal `chatConfirmationResolution`).

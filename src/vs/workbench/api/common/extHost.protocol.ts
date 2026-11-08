@@ -3889,8 +3889,6 @@ export type IChatSessionHistoryItemDto = {
 	/** A saved request no user sent: drawn as a system-initiated request with its label. */
 	isSystemInitiated?: boolean;
 	systemInitiatedLabel?: string;
-	/** A saved turn nothing opened: only its response is drawn. */
-	isRequestHidden?: boolean;
 } | {
 	type: 'response';
 	parts: IChatProgressDto[];

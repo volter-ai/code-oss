@@ -12,7 +12,7 @@ declare module 'vscode' {
 	 *   the active response's result, so its `errorDetails` are that response's error.
 	 * - A {@link ChatResponseTurn2} in {@link ChatSession.history} keeps the `errorDetails` of its result.
 	 * - A question carousel pushed to the active response's stream is answered, as on a participant's stream.
-	 * - A {@link ChatRequestTurn} in {@link ChatSession.history} keeps the two fields below.
+	 * - A {@link ChatRequestTurn} in {@link ChatSession.history} keeps the field below.
 	 */
 
 	export interface ChatRequestTurn {
@@ -21,11 +21,5 @@ declare module 'vscode' {
 		 * ran): it is drawn as a system-initiated request, a notification row with this label.
 		 */
 		systemInitiatedLabel?: string;
-
-		/**
-		 * Set on a request turn in {@link ChatSession.history} that nothing opened: it stays a turn of its own, with its
-		 * request hidden and only its response drawn.
-		 */
-		isRequestHidden?: boolean;
 	}
 }

@@ -174,7 +174,6 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 						modelId: turn.modelId,
 						modeInstructions: turn.modeInstructions ? revive(turn.modeInstructions) : undefined,
 						...(turn.isSystemInitiated ? { isSystemInitiated: true, systemInitiatedLabel: turn.systemInitiatedLabel } : {}),
-						...(turn.isRequestHidden ? { isRequestHidden: true } : {}),
 					} satisfies IChatSessionRequestHistoryItem;
 				}
 
@@ -344,7 +343,7 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 	handleProgressComplete(requestId: string, result?: IChatSessionResponseResultDto): void {
 		// Clean up any pending chunks for this request
 		this._pendingProgressChunks.delete(requestId);
-		// (only the active response completes through here: no other request's completion ends it)
+		// (the active response, `'ongoing'`, is the only one that completes through here)
 		if (requestId !== 'ongoing') {
 			return;
 		}

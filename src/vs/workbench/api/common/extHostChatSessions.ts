@@ -7,7 +7,7 @@ import type * as vscode from 'vscode';
 import { coalesce } from '../../../base/common/arrays.js';
 import { DeferredPromise } from '../../../base/common/async.js';
 import { CancellationToken, CancellationTokenSource } from '../../../base/common/cancellation.js';
-import { CancellationError } from '../../../base/common/errors.js';
+import { CancellationError, isCancellationError } from '../../../base/common/errors.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
 import { ResourceMap, ResourceSet } from '../../../base/common/map.js';
@@ -347,6 +347,8 @@ class ExtHostChatSession {
 	readonly pendingCarouselResolvers = new Map<string, Map<string, DeferredPromise<Record<string, unknown> | undefined>>>();
 	/** Cancelled when the user stops the active response, apart from the session's disposal. */
 	activeResponseCts: CancellationTokenSource | undefined;
+	/** Whether a question carousel on this session's streams is answered (`chatSessionResponses`). */
+	answersCarousels = false;
 
 	constructor(
 		public readonly session: vscode.ChatSession,
@@ -727,10 +729,15 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		}, this.commands.converter, sessionDisposables);
 
 		const disposeCts = sessionDisposables.add(new CancellationTokenSource());
+		// A session provided earlier for this resource is left running, not cancelled: its token is its provider's Stop,
+		// which would end the turn this session re-joins (the workbench keeps a running session's content until the
+		// user's interruption, so the earlier one may still be here). It reaches nothing more (`isCurrent`).
 		this._extHostChatSessions.set(sessionResource, { sessionObj: chatSession, disposeCts });
 
-		// The active response ends with the ChatResult its callback resolves with (`chatSessionResponses`).
+		// The active response ends with the ChatResult its callback resolves with, and its questions are answered
+		// (`chatSessionResponses`).
 		const sessionResponses = isProposedApiEnabled(provider.extension, 'chatSessionResponses');
+		chatSession.answersCarousels = sessionResponses;
 
 		// Call activeResponseCallback immediately for best user experience. Stopping the active response cancels its
 		// own token; disposing the session cancels it too. A session a newer one replaced completes nothing there.
@@ -744,7 +751,10 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			Promise.resolve(session.activeResponseCallback(chatSession.activeResponseStream.apiObject, activeResponseCts.token) as Thenable<vscode.ChatResult | void>).then(result => {
 				complete(sessionResponses ? this.convertResponseResult(provider.extension, result) : undefined);
 			}, error => {
-				this._logService.error(error);
+				// (the user's Stop ends the callback with a cancellation, which is no error)
+				if (!isCancellationError(error)) {
+					this._logService.error(error);
+				}
 				complete();
 			}).finally(() => chatSession.completeCarousels('ongoing'));
 		}
@@ -855,16 +865,17 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 	}
 
 	async $interruptChatSessionActiveResponse(providerHandle: number, sessionResource: UriComponents, requestId: string): Promise<void> {
-		const entry = this._extHostChatSessions.get(URI.revive(sessionResource));
+		// (the active response, `'ongoing'`, is the only response a session streams)
 		if (requestId === 'ongoing') {
-			entry?.sessionObj.activeResponseCts?.cancel();
-			return;
+			this._extHostChatSessions.get(URI.revive(sessionResource))?.sessionObj.activeResponseCts?.cancel();
 		}
-		this._logService.trace(`[ExtHostChatSessions] no streaming response ${requestId} to interrupt in ${sessionResource}`);
 	}
 
 	$handleQuestionCarouselAnswer(resolveId: string, answers: Record<string, unknown> | undefined): void {
 		for (const { sessionObj } of this._extHostChatSessions.values()) {
+			if (!sessionObj.answersCarousels) {
+				continue;
+			}
 			for (const [requestId, resolvers] of sessionObj.pendingCarouselResolvers) {
 				const deferred = resolvers.get(resolveId);
 				if (!deferred) {
@@ -1132,15 +1143,13 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 	}
 
 	/**
-	 * @param savedRequests Whether a turn's `systemInitiatedLabel` and `isRequestHidden` are kept (`chatSessionResponses`).
+	 * @param savedRequests Whether a turn's `systemInitiatedLabel` is kept (`chatSessionResponses`).
 	 */
 	private convertRequestTurn(turn: extHostTypes.ChatRequestTurn, savedRequests = false) {
 		const variables = turn.references.map(ref => this.convertReferenceToVariable(ref));
 		const label = savedRequests ? (turn as vscode.ChatRequestTurn).systemInitiatedLabel : undefined;
-		const hidden = savedRequests && (turn as vscode.ChatRequestTurn).isRequestHidden === true;
 		return {
 			...(typeof label === 'string' && label ? { isSystemInitiated: true, systemInitiatedLabel: label } : {}),
-			...(hidden ? { isRequestHidden: true } : {}),
 			type: 'request' as const,
 			id: turn.id,
 			prompt: turn.prompt,
