@@ -3150,6 +3150,7 @@ export class ChatResponseConfirmationPart {
 	message: string | vscode.MarkdownString;
 	data: any;
 	buttons?: string[];
+	isUsed?: boolean;
 
 	constructor(title: string, message: string | vscode.MarkdownString, data: any, buttons?: string[]) {
 		this.title = title;

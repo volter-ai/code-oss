@@ -72,8 +72,8 @@ export class ChatConfirmationContentPart extends Disposable implements IChatCont
 	}
 
 	hasSameContent(other: IChatProgressRenderableResponseContent): boolean {
-		// No other change allowed for this content type
-		return other.kind === 'confirmation' && (!isHarnessApproval(this.confirmation.data) || other === this.confirmation);
+		// No other change allowed for this content type, except being answered elsewhere (a part marked used)
+		return other.kind === 'confirmation' && (isHarnessApproval(this.confirmation.data) ? other === this.confirmation : !!other.isUsed === !!this.confirmation.isUsed);
 	}
 
 	addDisposable(disposable: IDisposable): void {

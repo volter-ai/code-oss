@@ -55,6 +55,11 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `IChatSession.onDidStartServerRequest` (the event the agent host's server-initiated turns use), ignores parts and
   completion of a request a later one ended, and exposes `resultObs`, which `chatServiceImpl.ts` sets on the
   response when it completes; `chatSessionsService.ts` declares `resultObs`.
+- **An extension can retire a confirmation answered elsewhere** (proposal `chatConfirmationResolution`).
+  `src/vscode-dts/vscode.proposed.chatConfirmationResolution.d.ts` adds `ChatResponseConfirmationPart.isUsed`;
+  `extHostTypes.ts` and `extHostTypeConverters.ts` carry it, `extHostChatAgents2.ts` `push` checks the proposal,
+  `chatModel.ts` replaces the response's open confirmation with equal `data` by a used copy, and
+  `chatConfirmationContentPart.ts` re-renders a confirmation that became used.
 
 ## Patches moved from the editor overlay
 

@@ -2656,7 +2656,8 @@ export namespace ChatResponseConfirmationPart {
 			title: part.title,
 			message: MarkdownString.from(part.message),
 			data: part.data,
-			buttons: part.buttons
+			buttons: part.buttons,
+			...(part.isUsed ? { isUsed: true } : {}),
 		};
 	}
 }
