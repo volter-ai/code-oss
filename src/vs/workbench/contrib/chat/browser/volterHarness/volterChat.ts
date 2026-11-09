@@ -19,14 +19,16 @@ import { ICommandService } from '../../../../../platform/commands/common/command
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
-import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IWorkspaceTrustManagementService } from '../../../../../platform/workspace/common/workspaceTrust.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
-import { ChatViewPaneTarget, IChatWidgetService } from '../chat.js';
+import { ChatViewId, ChatViewPaneTarget, IChatWidgetService, isIChatViewViewContext } from '../chat.js';
+import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
+import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IHarnessChatNavigationService } from './volterChatNavigation.js';
 import './media/panel-states.css';
@@ -100,6 +102,8 @@ registerAction2(class extends Action2 {
 		if (expectedFocus !== null && typeof expectedFocus !== 'string') { throw new Error('Expected the observed native conversation focus.'); }
 		const widgets = accessor.get(IChatWidgetService);
 		const navigation = accessor.get(IHarnessChatNavigationService);
+		const views = accessor.get(IViewsService);
+		const instantiation = accessor.get(IInstantiationService);
 		const focused = widgets.lastFocusedWidget;
 		// A blank chat that is not a harness conversation holds nothing a person chose: the workbench restores one
 		// on every page reload, and the extension is never told of it (focus is reported once a harness chat is
@@ -111,7 +115,19 @@ registerAction2(class extends Action2 {
 			const viewModel = widget?.viewModel;
 			return Boolean(viewModel && viewModel.sessionResource.scheme !== 'supercode' && !viewModel.model.hasRequests && !widget!.getInput().trim());
 		};
-		const matches = () => expectedFocus === resourceOf(focused) || (expectedFocus === null && blank(focused));
+		// While the Chat view is hidden (and no chat editor holds the conversation; revealing one opens no container), a
+		// readiness reveal makes the conversation the view's own without opening it or focusing any widget. Activation
+		// still makes it the extension's focus, so the focus the extension observes is what the hidden view shows: counted
+		// against the focused widget alone, every later readiness reveal was refused while Chat stayed closed. A hidden
+		// selection moves no visible focus, so it is the only commit that comparison admits.
+		const selectsHidden = () => {
+			const holder = widgets.getWidgetBySessionResource(resource);
+			return !views.isViewVisible(ChatViewId) && !(holder && !isIChatViewViewContext(holder.viewContext));
+		};
+		const hiddenFocus = () => selectsHidden()
+			? instantiation.invokeFunction(read => ChatViewPane.shownSessionResource(read))?.toString() ?? null : null;
+		const matches = () => expectedFocus === resourceOf(focused) || (expectedFocus === null && blank(focused))
+			|| (expectedFocus !== null && expectedFocus === hiddenFocus());
 		const focusedResource = resourceOf(focused);
 		const expected = matches();
 		let unchanged = true;
@@ -122,6 +138,14 @@ registerAction2(class extends Action2 {
 		const listener = widgets.onDidChangeFocusedSession(() => { unchanged = isCurrent(); });
 		try {
 			return await navigation.run(resource, async permit => {
+				// A conversation becoming ready is not a person's request to show Chat: which containers are visible is
+				// the person's layout. While the Chat view is hidden it becomes the view's conversation without opening
+				// the view, and the person sees it the moment they open Chat.
+				if (selectsHidden()) {
+					const selected = (await instantiation.invokeFunction(selectHidden => ChatViewPane.selectSessionWithoutRevealing(selectHidden, resource, permit)))?.toString();
+					if (selected !== resource.toString()) { throw new Error('The ready conversation was not selected.'); }
+					return { resource: selected };
+				}
 				const widget = await widgets.openSession(resource, ChatViewPaneTarget, { revealIfOpened: true, harnessNavigationPermit: permit });
 				const selected = widget?.viewModel?.sessionResource.toString();
 				if (selected !== resource.toString()) { throw new Error('The ready conversation was not selected.'); }

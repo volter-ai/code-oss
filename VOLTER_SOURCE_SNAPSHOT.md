@@ -78,6 +78,19 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `chatModel.ts` replaces the response's open confirmation with equal `data` by a used copy, and
   `chatConfirmationContentPart.ts` re-renders a confirmation that became used.
 
+- **A conversation can become the Chat view's own without opening the view.**
+  `ChatViewPane.selectSessionWithoutRevealing` in
+  `src/vs/workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.ts`: a created view loads it with
+  `loadSession` (no `openView`); a view not yet created gets it in its persisted state
+  (`memento/interactive-session-view-<provider>`, WORKSPACE), which it restores when the person opens Chat
+  (`getTransferredOrPersistedSessionInfo`); `ChatViewPane.shownSessionResource` reads which conversation that is.
+  `chatViewPaneState` drops the previous window's conversation on a fresh
+  start (`chat.restoreLastPanelSession` off) once per window instead of at every view construction, so a selection made
+  before the view exists survives its creation. `volter.chat.revealReadySession` (`volterHarness/volterChat.ts`) uses
+  it while the Chat view is hidden: a conversation becoming ready leaves the person's layout (a collapsed auxiliary
+  bar) as restored, and its focus guard counts the hidden view's conversation as the focus that activation reported;
+  `volter.chat.openSession` still reveals.
+
 ## Patches moved from the editor overlay
 
 On `main`, on top of `601de14d6bef3347a3f27b50ac79f01fc056f806` (cut first from `d6d53660ed1e`,
