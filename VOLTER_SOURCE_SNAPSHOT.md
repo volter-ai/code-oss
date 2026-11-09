@@ -47,7 +47,8 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   grace period runs only at a once-a-minute wake-up 3 ms long (`frame_scheduler_impl.cc`,
   `page_scheduler_impl.h`/`.cc`). The 4 ms flush misses the wake-up it was posted in, and every later write joins
   it, so every workbench → extension host call in a long-hidden tab waited for the next minute. A window's
-  `setTimeout0` posts a message (`kPostedMessage`, never throttled); Node and workers keep `setTimeout`.
+  `setTimeout0` posts a message (`kPostedMessage`, never throttled); Node and workers keep `setTimeout`. It reaches
+  a person only with the next workbench release, which is a publication.
 - **A chat response can carry a system notification row** (proposal `chatSystemNotification`).
   `src/vscode-dts/vscode.proposed.chatSystemNotification.d.ts` declares
   `ChatResponseSystemNotificationPart`, added to `ExtendedChatResponseParts` as `chatHooks` adds its part;
