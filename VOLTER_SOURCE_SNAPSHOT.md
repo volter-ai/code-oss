@@ -39,6 +39,16 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   each exclude glob into a regular expression in which a backslash before a digit is a
   back-reference: the watcher threw and every file watch stopped. The only watcher glob in the
   source built from a filesystem path.
+- **A protocol's writes flush on a posted message, not a timer.** `ProtocolWriter._scheduleWriting` in
+  `src/vs/base/parts/ipc/common/ipc.net.ts` schedules its flush with `setTimeout0`
+  (`src/vs/base/common/platform.ts`). `PersistentProtocol`'s keep-alive `setInterval` writes through the same
+  writer; once the interval is past Chromium's timer nesting limit, the flush it schedules is a
+  `kJavascriptTimerDelayedHighNesting` timer clamped to 4 ms (`dom_timer.cc`), which a page hidden past the
+  grace period runs only at a once-a-minute wake-up 3 ms long (`frame_scheduler_impl.cc`,
+  `page_scheduler_impl.h`/`.cc`). The 4 ms flush misses the wake-up it was posted in, and every later write joins
+  it, so every workbench → extension host call in a long-hidden tab waited for the next minute. A window's
+  `setTimeout0` posts a message (`kPostedMessage`, never throttled); Node and workers keep `setTimeout`. It reaches
+  a person only with the next workbench release, which is a publication.
 - **A chat response can carry a system notification row** (proposal `chatSystemNotification`).
   `src/vscode-dts/vscode.proposed.chatSystemNotification.d.ts` declares
   `ChatResponseSystemNotificationPart`, added to `ExtendedChatResponseParts` as `chatHooks` adds its part;

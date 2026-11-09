@@ -6,6 +6,7 @@
 import { VSBuffer } from '../../../common/buffer.js';
 import { Emitter, Event } from '../../../common/event.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../common/lifecycle.js';
+import { setTimeout0 } from '../../../common/platform.js';
 import { IIPCLogger, IMessagePassingProtocol, IPCClient } from './ipc.js';
 
 export const enum SocketDiagnosticsEventType {
@@ -503,13 +504,15 @@ class ProtocolWriter {
 		}
 	}
 
-	private _writeNowTimeout: Timeout | null = null;
+	private _isWriteScheduled = false;
 	private _scheduleWriting(): void {
-		if (this._writeNowTimeout) {
+		if (this._isWriteScheduled) {
 			return;
 		}
-		this._writeNowTimeout = setTimeout(() => {
-			this._writeNowTimeout = null;
+		this._isWriteScheduled = true;
+		// A posted message, not setTimeout: a flush scheduled from the keep-alive interval is a deeply nested timer, which a hidden tab runs once a minute (Chromium dom_timer.cc, frame_scheduler_impl.cc; https://developer.chrome.com/blog/timer-throttling-in-chrome-88).
+		setTimeout0(() => {
+			this._isWriteScheduled = false;
 			this._writeNow();
 		});
 	}
