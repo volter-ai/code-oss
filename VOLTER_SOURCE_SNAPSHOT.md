@@ -94,8 +94,9 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   focused (or named) conversation's items from `ChatViewModel.getItems()`, the list `ChatListRenderer` renders: each
   request attributed to the person, or to the system when `isSystemInitiated` (shown as its `systemInitiatedLabel`);
   each response's parts, with a confirmation's `isUsed`, a harness approval's request, and a tool invocation's state
-  and `IChatToolInvocation.executionConfirmedOrDenied`. A rebase keeps those view model and part types, or redoes it
-  against their successors.
+  and `IChatToolInvocation.executionConfirmedOrDenied`. It returns the last 20 items unless asked for `last`, each text
+  cut at 2000 characters with its `textLength`. A rebase keeps those view model and part types, or redoes it against
+  their successors.
 
 ## Patches moved from the editor overlay
 

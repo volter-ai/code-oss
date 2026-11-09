@@ -368,31 +368,48 @@ function transcriptPart(part: IChatProgressResponseContent): Record<string, unkn
 	}
 }
 
+// Bounded by default: the last TRANSCRIPT_LAST items, each text cut at TRANSCRIPT_TEXT_CAP characters with its
+// original length in `textLength`, so a long conversation does not arrive whole. `last` asks for a different count.
+const TRANSCRIPT_LAST = 20;
+const TRANSCRIPT_TEXT_CAP = 2000;
+
+function capText<T extends Record<string, unknown>>(entry: T): T {
+	const text = entry.text;
+	if (typeof text !== 'string' || text.length <= TRANSCRIPT_TEXT_CAP) { return entry; }
+	return { ...entry, text: text.slice(0, TRANSCRIPT_TEXT_CAP), textLength: text.length };
+}
+
 registerAction2(class extends Action2 {
 	constructor() { super({ id: 'volter.chat.transcript', title: localize2('harnessChatTranscript', 'Read Chat Transcript'), f1: false }); }
 	run(accessor: ServicesAccessor, value?: unknown) {
+		// A conversation resource, or `{resource?, last?}`.
+		const options = typeof value === 'string' ? { resource: value } : value ?? {};
+		if (typeof options !== 'object') { throw new Error('Expected a conversation resource or {resource, last}.'); }
+		const { resource, last = TRANSCRIPT_LAST } = options as { resource?: unknown; last?: unknown };
+		if (resource !== undefined && resource !== null && typeof resource !== 'string') { throw new Error('Expected a conversation resource.'); }
+		if (typeof last !== 'number' || !Number.isSafeInteger(last) || last < 1) { throw new Error('Expected last to be a positive whole number.'); }
 		const widgets = accessor.get(IChatWidgetService);
-		if (value !== undefined && value !== null && typeof value !== 'string') { throw new Error('Expected a conversation resource.'); }
-		const widget = typeof value === 'string' && value ? widgets.getWidgetBySessionResource(URI.parse(value)) : widgets.lastFocusedWidget;
+		const widget = resource ? widgets.getWidgetBySessionResource(URI.parse(resource)) : widgets.lastFocusedWidget;
 		const viewModel = widget?.viewModel;
-		if (!viewModel) { throw new Error(value ? 'No Chat shows this conversation.' : 'No Chat is focused.'); }
-		const items = viewModel.getItems().map(item => {
+		if (!viewModel) { throw new Error(resource ? 'No Chat shows this conversation.' : 'No Chat is focused.'); }
+		const all = viewModel.getItems();
+		const items = all.slice(-last).map(item => {
 			if (isRequestVM(item)) {
-				return {
+				return capText({
 					kind: 'request', id: item.id, attribution: item.isSystemInitiated ? 'system' : 'user', username: item.username,
 					text: item.isSystemInitiated ? item.systemInitiatedLabel ?? item.messageText : item.messageText,
 					pending: item.pendingKind,
-				};
+				});
 			}
 			if (isResponseVM(item)) {
 				return {
 					kind: 'response', id: item.id, requestId: item.requestId, attribution: 'agent', username: item.username,
 					complete: item.isComplete, canceled: item.isCanceled, error: item.errorDetails?.message,
-					parts: item.response.value.map(transcriptPart),
+					parts: item.response.value.map(part => capText(transcriptPart(part))),
 				};
 			}
 			return { kind: 'divider', pending: item.dividerKind, systemInitiated: !!item.isSystemInitiated };
 		});
-		return { sessionResource: viewModel.sessionResource.toString(), visible: widget.visible, items };
+		return { sessionResource: viewModel.sessionResource.toString(), visible: widget.visible, totalItems: all.length, items };
 	}
 });
