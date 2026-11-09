@@ -11,6 +11,7 @@ import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { KeyCode } from '../../../../../base/common/keyCodes.js';
 import { isWindows } from '../../../../../base/common/platform.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { isCancellationError } from '../../../../../base/common/errors.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { IAgentHostEnablementService } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
@@ -31,6 +32,10 @@ import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IHarnessChatNavigationService } from './volterChatNavigation.js';
+import { isHarnessApproval } from './volterChatApproval.js';
+import { IChatToolInvocation, IChatToolInvocationSerialized, ToolConfirmKind } from '../../common/chatService/chatService.js';
+import { IChatProgressResponseContent } from '../../common/model/chatModel.js';
+import { isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import './media/panel-states.css';
 
 // The native permissions picker supports provider-defined permission groups,
@@ -291,5 +296,103 @@ registerAction2(class extends Action2 {
 				&& !widget.viewModel.sessionResource.path.startsWith('/untitled-')
 				&& widget.viewModel.sessionResource.toString() !== navigation.activeResource,
 		};
+	}
+});
+
+// Read-only: the conversation as Chat's list shows it, read from the same view model items the list renders
+// (`ChatViewModel.getItems()`: hidden requests left out, queued and steering requests after their divider), so a
+// reading can check what a person sees without a browser. A request is the person's unless it is system-initiated,
+// which `ChatListRenderer.renderSystemInitiatedRequest` shows as a notification row of its label.
+const markdownText = (value: string | IMarkdownString | undefined) => typeof value === 'string' ? value : value?.value;
+
+const toolStates: Record<IChatToolInvocation.StateKind, string> = {
+	[IChatToolInvocation.StateKind.Streaming]: 'streaming',
+	[IChatToolInvocation.StateKind.WaitingForConfirmation]: 'waitingForConfirmation',
+	[IChatToolInvocation.StateKind.Executing]: 'executing',
+	[IChatToolInvocation.StateKind.WaitingForPostApproval]: 'waitingForPostApproval',
+	[IChatToolInvocation.StateKind.Completed]: 'completed',
+	[IChatToolInvocation.StateKind.Cancelled]: 'cancelled',
+	[IChatToolInvocation.StateKind.WaitingForAuthentication]: 'waitingForAuthentication',
+};
+
+function toolApproval(part: IChatToolInvocation | IChatToolInvocationSerialized): string {
+	const reason = IChatToolInvocation.executionConfirmedOrDenied(part);
+	if (!reason) { return 'pending'; }
+	switch (reason.type) {
+		case ToolConfirmKind.UserAction: return 'approved';
+		case ToolConfirmKind.Denied: return 'denied';
+		case ToolConfirmKind.Skipped: return 'skipped';
+		default: return 'notRequired';
+	}
+}
+
+function transcriptPart(part: IChatProgressResponseContent): Record<string, unknown> {
+	switch (part.kind) {
+		case 'markdownContent': case 'progressMessage': case 'systemNotification': case 'warning': case 'info':
+			return { kind: part.kind, text: part.content.value };
+		case 'thinking':
+			return { kind: part.kind, text: Array.isArray(part.value) ? part.value.join('') : part.value ?? '' };
+		case 'confirmation': {
+			const answer = isHarnessApproval(part.data) && Array.isArray(part.data.answers) ? part.data.answers[0] : undefined;
+			return {
+				kind: part.kind, title: part.title, text: markdownText(part.message), buttons: part.buttons,
+				state: part.isUsed ? 'answered' : 'pending',
+				harnessApproval: answer ? { connectionId: answer.connectionId, requestId: answer.requestId } : undefined,
+			};
+		}
+		case 'toolInvocation': {
+			const state = part.state.get();
+			const confirmation = state.type === IChatToolInvocation.StateKind.WaitingForConfirmation ? state.confirmationMessages : undefined;
+			return {
+				kind: part.kind, toolId: part.toolId, toolCallId: part.toolCallId, state: toolStates[state.type],
+				approval: state.type === IChatToolInvocation.StateKind.Streaming ? undefined : toolApproval(part),
+				text: markdownText(state.type === IChatToolInvocation.StateKind.Completed ? part.pastTenseMessage ?? part.invocationMessage : part.invocationMessage),
+				confirmation: confirmation ? { title: markdownText(confirmation.title), text: markdownText(confirmation.message) } : undefined,
+			};
+		}
+		case 'toolInvocationSerialized':
+			return {
+				kind: part.kind, toolId: part.toolId, toolCallId: part.toolCallId, state: part.isComplete ? 'completed' : 'incomplete',
+				approval: toolApproval(part), text: markdownText(part.pastTenseMessage ?? part.invocationMessage),
+			};
+		case 'elicitation2':
+			return { kind: part.kind, title: markdownText(part.title), text: markdownText(part.message), state: part.state.get() };
+		case 'elicitationSerialized':
+			return { kind: part.kind, title: markdownText(part.title), text: markdownText(part.message), state: part.state };
+		case 'questionCarousel':
+			return { kind: part.kind, text: part.questions.map(question => question.title).join('\n'), state: part.isUsed ? 'answered' : 'pending' };
+		case 'hook':
+			return { kind: part.kind, text: part.systemMessage ?? part.stopReason };
+		default:
+			return { kind: part.kind };
+	}
+}
+
+registerAction2(class extends Action2 {
+	constructor() { super({ id: 'volter.chat.transcript', title: localize2('harnessChatTranscript', 'Read Chat Transcript'), f1: false }); }
+	run(accessor: ServicesAccessor, value?: unknown) {
+		const widgets = accessor.get(IChatWidgetService);
+		if (value !== undefined && typeof value !== 'string') { throw new Error('Expected a conversation resource.'); }
+		const widget = value ? widgets.getWidgetBySessionResource(URI.parse(value)) : widgets.lastFocusedWidget;
+		const viewModel = widget?.viewModel;
+		if (!viewModel) { throw new Error(value ? 'No Chat shows this conversation.' : 'No Chat is focused.'); }
+		const items = viewModel.getItems().map(item => {
+			if (isRequestVM(item)) {
+				return {
+					kind: 'request', id: item.id, attribution: item.isSystemInitiated ? 'system' : 'user', username: item.username,
+					text: item.isSystemInitiated ? item.systemInitiatedLabel ?? item.messageText : item.messageText,
+					pending: item.pendingKind,
+				};
+			}
+			if (isResponseVM(item)) {
+				return {
+					kind: 'response', id: item.id, requestId: item.requestId, attribution: 'agent', username: item.username,
+					complete: item.isComplete, canceled: item.isCanceled, error: item.errorDetails?.message,
+					parts: item.response.value.map(transcriptPart),
+				};
+			}
+			return { kind: 'divider', pending: item.dividerKind, systemInitiated: !!item.isSystemInitiated };
+		});
+		return { sessionResource: viewModel.sessionResource.toString(), visible: widget.visible, items };
 	}
 });
