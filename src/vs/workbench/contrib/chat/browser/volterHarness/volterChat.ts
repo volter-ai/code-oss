@@ -372,8 +372,8 @@ registerAction2(class extends Action2 {
 	constructor() { super({ id: 'volter.chat.transcript', title: localize2('harnessChatTranscript', 'Read Chat Transcript'), f1: false }); }
 	run(accessor: ServicesAccessor, value?: unknown) {
 		const widgets = accessor.get(IChatWidgetService);
-		if (value !== undefined && typeof value !== 'string') { throw new Error('Expected a conversation resource.'); }
-		const widget = value ? widgets.getWidgetBySessionResource(URI.parse(value)) : widgets.lastFocusedWidget;
+		if (value !== undefined && value !== null && typeof value !== 'string') { throw new Error('Expected a conversation resource.'); }
+		const widget = typeof value === 'string' && value ? widgets.getWidgetBySessionResource(URI.parse(value)) : widgets.lastFocusedWidget;
 		const viewModel = widget?.viewModel;
 		if (!viewModel) { throw new Error(value ? 'No Chat shows this conversation.' : 'No Chat is focused.'); }
 		const items = viewModel.getItems().map(item => {
