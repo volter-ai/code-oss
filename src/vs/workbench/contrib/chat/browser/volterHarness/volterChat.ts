@@ -115,7 +115,19 @@ registerAction2(class extends Action2 {
 			const viewModel = widget?.viewModel;
 			return Boolean(viewModel && viewModel.sessionResource.scheme !== 'supercode' && !viewModel.model.hasRequests && !widget!.getInput().trim());
 		};
-		const matches = () => expectedFocus === resourceOf(focused) || (expectedFocus === null && blank(focused));
+		// While the Chat view is hidden (and no chat editor holds the conversation; revealing one opens no container), a
+		// readiness reveal makes the conversation the view's own without opening it or focusing any widget. Activation
+		// still makes it the extension's focus, so the focus the extension observes is what the hidden view shows: counted
+		// against the focused widget alone, every later readiness reveal was refused while Chat stayed closed. A hidden
+		// selection moves no visible focus, so it is the only commit that comparison admits.
+		const selectsHidden = () => {
+			const holder = widgets.getWidgetBySessionResource(resource);
+			return !views.isViewVisible(ChatViewId) && !(holder && !isIChatViewViewContext(holder.viewContext));
+		};
+		const hiddenFocus = () => selectsHidden()
+			? instantiation.invokeFunction(read => ChatViewPane.shownSessionResource(read))?.toString() ?? null : null;
+		const matches = () => expectedFocus === resourceOf(focused) || (expectedFocus === null && blank(focused))
+			|| (expectedFocus !== null && expectedFocus === hiddenFocus());
 		const focusedResource = resourceOf(focused);
 		const expected = matches();
 		let unchanged = true;
@@ -127,11 +139,9 @@ registerAction2(class extends Action2 {
 		try {
 			return await navigation.run(resource, async permit => {
 				// A conversation becoming ready is not a person's request to show Chat: which containers are visible is
-				// the person's layout. While the Chat view is hidden (and no chat editor already holds the conversation;
-				// revealing one opens no container), it becomes the view's conversation without opening the view, and
-				// the person sees it the moment they open Chat.
-				const holder = widgets.getWidgetBySessionResource(resource);
-				if (!views.isViewVisible(ChatViewId) && !(holder && !isIChatViewViewContext(holder.viewContext))) {
+				// the person's layout. While the Chat view is hidden it becomes the view's conversation without opening
+				// the view, and the person sees it the moment they open Chat.
+				if (selectsHidden()) {
 					const selected = (await instantiation.invokeFunction(selectHidden => ChatViewPane.selectSessionWithoutRevealing(selectHidden, resource, permit)))?.toString();
 					if (selected !== resource.toString()) { throw new Error('The ready conversation was not selected.'); }
 					return { resource: selected };

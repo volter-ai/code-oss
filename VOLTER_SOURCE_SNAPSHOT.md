@@ -83,11 +83,13 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `src/vs/workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.ts`: a created view loads it with
   `loadSession` (no `openView`); a view not yet created gets it in its persisted state
   (`memento/interactive-session-view-<provider>`, WORKSPACE), which it restores when the person opens Chat
-  (`getTransferredOrPersistedSessionInfo`). `chatViewPaneState` drops the previous window's conversation on a fresh
+  (`getTransferredOrPersistedSessionInfo`); `ChatViewPane.shownSessionResource` reads which conversation that is.
+  `chatViewPaneState` drops the previous window's conversation on a fresh
   start (`chat.restoreLastPanelSession` off) once per window instead of at every view construction, so a selection made
   before the view exists survives its creation. `volter.chat.revealReadySession` (`volterHarness/volterChat.ts`) uses
   it while the Chat view is hidden: a conversation becoming ready leaves the person's layout (a collapsed auxiliary
-  bar) as restored; `volter.chat.openSession` still reveals.
+  bar) as restored, and its focus guard counts the hidden view's conversation as the focus that activation reported;
+  `volter.chat.openSession` still reveals.
 
 ## Patches moved from the editor overlay
 

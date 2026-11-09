@@ -1498,6 +1498,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	static async selectSessionWithoutRevealing(accessor: ServicesAccessor, sessionResource: URI, permit?: HarnessChatNavigationPermit): Promise<URI | undefined> {
 		const view = accessor.get(IViewsService).getViewWithId<ChatViewPane>(ChatViewId);
 		if (view) {
+			if (isEqual(view.widget?.viewModel?.sessionResource, sessionResource)) {
+				return sessionResource;
+			}
 			return (await view.loadSession(sessionResource, undefined, permit))?.sessionResource;
 		}
 		const { memento, viewState } = chatViewPaneState(accessor.get(IStorageService), accessor.get(ILifecycleService), accessor.get(IConfigurationService));
@@ -1505,6 +1508,24 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		viewState.sessionResource = sessionResource;
 		memento.saveMemento();
 		return sessionResource;
+	}
+
+	/**
+	 * The conversation the Chat view shows, or, for a view not yet created, the one it restores when the person opens
+	 * Chat ({@link getTransferredOrPersistedSessionInfo}).
+	 */
+	static shownSessionResource(accessor: ServicesAccessor): URI | undefined {
+		const view = accessor.get(IViewsService).getViewWithId<ChatViewPane>(ChatViewId);
+		if (view) {
+			return view.widget?.viewModel?.sessionResource;
+		}
+		const transferred = accessor.get(IChatService).transferredSessionResource;
+		if (transferred) {
+			return transferred;
+		}
+		const { viewState } = chatViewPaneState(accessor.get(IStorageService), accessor.get(ILifecycleService), accessor.get(IConfigurationService));
+		// Persisted state read back from storage holds the URI's components.
+		return viewState.sessionResource ? URI.revive(viewState.sessionResource) : viewState.sessionId ? LocalChatSessionUri.forSession(viewState.sessionId) : undefined;
 	}
 
 	async loadSession(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason, permit?: HarnessChatNavigationPermit, openingToken?: CancellationToken): Promise<IChatModel | undefined> {
