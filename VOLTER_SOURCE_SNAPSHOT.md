@@ -90,6 +90,13 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   it while the Chat view is hidden: a conversation becoming ready leaves the person's layout (a collapsed auxiliary
   bar) as restored, and its focus guard counts the hidden view's conversation as the focus that activation reported;
   `volter.chat.openSession` still reveals.
+- **Chat's rendered transcript can be read.** `volter.chat.transcript` (`volterHarness/volterChat.ts`) returns the
+  focused (or named) conversation's items from `ChatViewModel.getItems()`, the list `ChatListRenderer` renders: each
+  request attributed to the person, or to the system when `isSystemInitiated` (shown as its `systemInitiatedLabel`);
+  each response's parts, with a confirmation's `isUsed`, a harness approval's request, and a tool invocation's state
+  and `IChatToolInvocation.executionConfirmedOrDenied`. It returns the last 20 items unless asked for `last`, each text
+  cut at 2000 characters with its `textLength`. A rebase keeps those view model and part types, or redoes it against
+  their successors.
 
 ## Patches moved from the editor overlay
 
