@@ -1,0 +1,5 @@
+{
+	"name": "@volter/cyclotron",
+	"displayName": "Volter Cyclotron",
+	"install": "npx @volter/cyclotron create my-game"
+}

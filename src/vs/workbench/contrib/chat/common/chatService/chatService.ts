@@ -414,6 +414,8 @@ export interface IChatCommandButton {
 	command: Command;
 	kind: 'command';
 	additionalCommands?: Command[]; // rendered as secondary buttons
+	/** Presentation only: consecutive answers to one live harness request. */
+	harnessAnswerGroup?: string;
 }
 
 export interface IChatMoveMessage {

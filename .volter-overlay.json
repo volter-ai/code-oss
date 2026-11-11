@@ -1,0 +1,23 @@
+{
+  "product": "cyclotron",
+  "target": "web",
+  "commit": "f16dc165c0dffe701a7bbf59aefb1c662b206cee",
+  "editorSource": {
+    "repository": "https://github.com/volter-ai/editor",
+    "revision": "499d577f51f33700e09845b7e0a3473e42d2d666",
+    "dirty": false
+  },
+  "kit": "packages/editor-core/workbench",
+  "productHalf": "packages/cyclotron/workbench",
+  "extensions": [
+    "volter-keymaps",
+    "volter-view-chat",
+    "theme-blender"
+  ],
+  "lookTiers": [],
+  "chatExtension": {
+    "id": "volter-ai-dev.volter-view-chat",
+    "version": "0.0.1"
+  },
+  "overlaidAt": "2026-10-07T13:28:36.598Z"
+}
