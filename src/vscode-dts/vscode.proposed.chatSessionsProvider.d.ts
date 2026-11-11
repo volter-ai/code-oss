@@ -138,6 +138,8 @@ declare module 'vscode' {
 		 * The previous input state for the session.
 		 */
 		readonly previousInputState: ChatSessionInputState | undefined;
+		/** Options supplied for this input/request, independently of type-wide previous state. */
+		readonly initialSessionOptions?: ReadonlyArray<{ optionId: string; value: string }>;
 	}, token: CancellationToken) => Thenable<ChatSessionInputState> | ChatSessionInputState;
 
 	/**
