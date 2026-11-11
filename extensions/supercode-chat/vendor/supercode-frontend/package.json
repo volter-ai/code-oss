@@ -1,0 +1,39 @@
+{
+  "name": "@volter/supercode-frontend",
+  "version": "0.2.9",
+  "type": "module",
+  "description": "Generated language-neutral attachment client for Volter Harness SDK runtimes",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./client.mjs"
+    },
+    "./generated": {
+      "types": "./generated.d.mts",
+      "import": "./generated.mjs"
+    },
+    "./contract.json": "./contract.json"
+  },
+  "types": "./index.d.ts",
+  "files": [
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "client.mjs",
+    "index.d.ts",
+    "generated.mjs",
+    "generated.d.mts",
+    "generated-client.mjs",
+    "generated-client.d.mts",
+    "contract.json",
+    "test/fixtures/conformance.json",
+    "README.md"
+  ],
+  "scripts": {
+    "generate": "node generate.mjs",
+    "check": "node generate.mjs --check"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT OR Apache-2.0"
+}
