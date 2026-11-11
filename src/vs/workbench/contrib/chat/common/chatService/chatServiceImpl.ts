@@ -637,7 +637,7 @@ export class ChatService extends Disposable implements IChatService {
 			});
 		}
 
-		const defaultAgent = this.chatAgentService.getActivatedAgents().find(agent => agent.id === defaultAgentData.id);
+		const defaultAgent = this.chatAgentService.getDefaultAgent(location) ?? this.chatAgentService.getDefaultAgent(ChatAgentLocation.Chat);
 		if (!defaultAgent) {
 			throw new ErrorNoTelemetry('No default agent registered');
 		}
@@ -959,6 +959,13 @@ export class ChatService extends Disposable implements IChatService {
 				);
 			} else {
 				// response
+				if (!lastRequest) {
+					const agent = message.participant ? this.chatAgentService.getAgent(message.participant) : undefined;
+					lastRequest = model.addRequest(parseAgentHostHistoryPrompt('', agent), { variables: [] }, 0,
+						undefined, agent, undefined, undefined, undefined, undefined, false,
+						undefined, undefined, undefined, true, undefined, undefined, false, null,
+						false, undefined, true); // response-only history: no visible user message
+				}
 				if (lastRequest) {
 					for (const part of message.parts) {
 						model.acceptResponseProgress(lastRequest, part);
