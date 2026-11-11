@@ -91,7 +91,8 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   bar) as restored, and its focus guard counts the hidden view's conversation as the focus that activation reported;
   `volter.chat.openSession` still reveals. A blank chat guards nothing, and that includes the default agent's untitled
   session a reload restores (`supercode:/untitled-…`, `isUntitledChatSession` in `chat/common/model/chatUri.ts`).
-  Before, the guard refused the restored conversation's reveal and the reopened Chat showed an empty chat.
+  Whether the earlier guard ever refused a restored conversation is not established: the empty reopens observed on
+  Cyclotron 0.5.218 came up in hidden tabs, and a reload onto an untitled chat restored the conversation every time.
 - **Chat's rendered transcript can be read.** `volter.chat.transcript` (`volterHarness/volterChat.ts`) returns the
   focused (or named) conversation's items from `ChatViewModel.getItems()`, the list `ChatListRenderer` renders: each
   request attributed to the person, or to the system when `isSystemInitiated` (shown as its `systemInitiatedLabel`);
