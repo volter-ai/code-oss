@@ -5,6 +5,8 @@
 
 import * as dom from '../../../../../base/browser/dom.js';
 import { timeout } from '../../../../../base/common/async.js';
+import { CancellationError } from '../../../../../base/common/errors.js';
+import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { combinedDisposable, Disposable, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { isEqual } from '../../../../../base/common/resources.js';
@@ -20,12 +22,16 @@ import { ChatViewId, ChatViewPaneTarget, IChatWidget, IChatWidgetService, IQuick
 import { ChatEditor, IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatEditorInput } from '../widgetHosts/editor/chatEditorInput.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
+import { HarnessChatNavigationPermit, IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
 
 export class ChatWidgetService extends Disposable implements IChatWidgetService {
 
 	declare readonly _serviceBrand: undefined;
 
 	private _widgets: IChatWidget[] = [];
+	private harnessOpenGeneration = 0;
+	private harnessUntitledOpening: (() => boolean) | undefined;
+	private cancelHarnessUntitledOpening: (() => void) | undefined;
 	private _lastFocusedWidget: IChatWidget | undefined = undefined;
 
 	private readonly _onDidAddWidget = this._register(new Emitter<IChatWidget>());
@@ -54,6 +60,7 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 		@IEditorService private readonly editorService: IEditorService,
 		@IChatService private readonly chatService: IChatService,
 		@ILogService private readonly logService: ILogService,
+		@IHarnessChatNavigationService private readonly harnessNavigation: IHarnessChatNavigationService,
 	) {
 		super();
 	}
@@ -88,8 +95,20 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 	}
 
 	async reveal(widget: IChatWidget, preserveFocus?: boolean): Promise<boolean> {
+		const resource = widget.viewModel?.sessionResource;
+		return resource ? this.harnessNavigation.run(resource, async permit => {
+			const revealed = await this.revealAfterGuard(widget, preserveFocus, permit);
+			if (permit && (!revealed || !this._widgets.includes(widget) || widget.viewModel?.sessionResource.toString() !== resource.toString())) {
+				throw new Error('The requested conversation was not revealed by native Chat.');
+			}
+			return revealed;
+		}, undefined,
+			() => this._widgets.includes(widget) && widget.viewModel?.sessionResource.toString() === resource.toString()) : this.revealAfterGuard(widget, preserveFocus);
+	}
+
+	private async revealAfterGuard(widget: IChatWidget, preserveFocus?: boolean, permit?: HarnessChatNavigationPermit): Promise<boolean> {
 		if (widget.viewModel?.sessionResource) {
-			const alreadyOpenWidget = await this.revealSessionIfAlreadyOpen(widget.viewModel.sessionResource, { preserveFocus });
+			const alreadyOpenWidget = await this.revealSessionIfAlreadyOpen(widget.viewModel.sessionResource, { preserveFocus, harnessNavigationPermit: permit });
 			if (alreadyOpenWidget) {
 				return true;
 			}
@@ -112,6 +131,61 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 	openSession(sessionResource: URI, target?: typeof ChatViewPaneTarget, options?: IChatEditorOptions): Promise<IChatWidget | undefined>;
 	openSession(sessionResource: URI, target?: PreferredGroup, options?: IChatEditorOptions): Promise<IChatWidget | undefined>;
 	async openSession(sessionResource: URI, target?: typeof ChatViewPaneTarget | PreferredGroup, options?: IChatEditorOptions): Promise<IChatWidget | undefined> {
+		this.cancelHarnessUntitledOpening?.();
+		const generation = ++this.harnessOpenGeneration;
+		const untitledSidebar = sessionResource.scheme === 'supercode' && sessionResource.path.startsWith('/untitled-')
+			&& (target === ChatViewPaneTarget || typeof target === 'undefined') && !this.getWidgetBySessionResource(sessionResource);
+		const focused = this.lastFocusedWidget;
+		const focusedResource = focused?.viewModel?.sessionResource.toString();
+		let bindingWidget: IChatWidget | undefined;
+		let focusing = false;
+		let unchanged = true;
+		const cancellation = untitledSidebar ? new CancellationTokenSource() : undefined;
+		const invalidate = () => { unchanged = false; cancellation?.cancel(); };
+		const isCurrent = () => unchanged && generation === this.harnessOpenGeneration
+			&& (!bindingWidget || this._widgets.includes(bindingWidget));
+		if (untitledSidebar) { this.harnessUntitledOpening = isCurrent; this.cancelHarnessUntitledOpening = invalidate; }
+		const focusListeners: IDisposable[] = [];
+		const observeFocus = (widget: IChatWidget) => focusListeners.push(widget.onDidFocus(() => {
+			if (!focusing || widget !== bindingWidget || widget.viewModel?.sessionResource.toString() !== sessionResource.toString()) { invalidate(); }
+		}));
+		if (untitledSidebar) {
+			this._widgets.forEach(observeFocus);
+			focusListeners.push(this.editorService.onDidActiveEditorChange(invalidate), this.editorGroupsService.onDidChangeActiveGroup(invalidate));
+			focusListeners.push(this.onDidRemoveWidget(widget => { if (widget === bindingWidget) { invalidate(); } }));
+		}
+		const added = untitledSidebar ? this.onDidAddWidget(widget => {
+			if (isIChatViewViewContext(widget.viewContext) && widget.viewContext.viewId === ChatViewId) { bindingWidget = widget; }
+			observeFocus(widget);
+		}) : undefined;
+		const listener = untitledSidebar ? this.onDidChangeFocusedSession(() => {
+			const widget = this.lastFocusedWidget;
+			const key = widget?.viewModel?.sessionResource.toString();
+			// The original focus may stay put, or its own load may bind the target.
+			// Any other selection invalidates this opening permanently.
+			if (widget === focused && key === focusedResource) { return; }
+			if (bindingWidget && widget === bindingWidget && key === sessionResource.toString()) { return; }
+			invalidate();
+		}) : undefined;
+		try {
+			return await this.harnessNavigation.run(sessionResource, async permit => {
+				const opening = untitledSidebar ? { isCurrent, token: cancellation!.token,
+					willBind: (widget: IChatWidget) => { bindingWidget = widget; }, willFocus: () => { focusing = true; } } : undefined;
+				const widget = await this.openSessionAfterGuard(sessionResource, target, options, permit, opening);
+				if (untitledSidebar && !isCurrent()) { throw new CancellationError(); }
+				if ((permit || untitledSidebar) && widget?.viewModel?.sessionResource.toString() !== sessionResource.toString()) {
+					throw new Error('The requested conversation was not selected by native Chat.');
+				}
+				return widget;
+			}, options?.harnessNavigationPermit, untitledSidebar ? isCurrent : undefined);
+		} finally {
+			listener?.dispose(); added?.dispose(); focusListeners.forEach(listener => listener.dispose()); cancellation?.dispose();
+			if (this.harnessUntitledOpening === isCurrent) { this.harnessUntitledOpening = undefined; this.cancelHarnessUntitledOpening = undefined; }
+		}
+	}
+
+	private async openSessionAfterGuard(sessionResource: URI, target?: typeof ChatViewPaneTarget | PreferredGroup, options?: IChatEditorOptions, permit?: HarnessChatNavigationPermit, opening?: { isCurrent: () => boolean; token: CancellationTokenSource['token']; willBind: (widget: IChatWidget) => void; willFocus: () => void }): Promise<IChatWidget | undefined> {
+		if (permit) { options = { ...options, harnessNavigationPermit: permit }; }
 		const t0 = Date.now();
 		const targetKind = target === ChatViewPaneTarget ? 'view' : (typeof target === 'undefined' ? 'undefined' : 'editor');
 		this.logService.trace(`[ChatWidgetService] openSession start uri=${sessionResource.toString()} target=${targetKind}`);
@@ -129,10 +203,19 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 
 		// Load this session in chat view (preferred)
 		if (target === ChatViewPaneTarget || typeof target === 'undefined') {
-			const chatView = await this.viewsService.openView<ChatViewPane>(ChatViewId, !options?.preserveFocus);
+			// A harness draft owns its requested URI before this awaited open. Do not
+			// publish the outgoing sidebar's focus before binding that URI.
+			const chatView = await this.viewsService.openView<ChatViewPane>(ChatViewId, sessionResource.scheme === 'supercode' ? false : !options?.preserveFocus);
 			if (chatView) {
-				await chatView.loadSession(sessionResource, options?.sessionTypeSelectionReason);
+				if (opening && !opening.isCurrent()) { throw new CancellationError(); }
+				opening?.willBind(chatView.widget);
+				await chatView.loadSession(sessionResource, options?.sessionTypeSelectionReason, permit, opening?.token);
+				if (sessionResource.scheme === 'supercode' && chatView.widget?.viewModel?.sessionResource.toString() !== sessionResource.toString()) {
+					throw new Error('The requested conversation was not bound by the native Chat view.');
+				}
+				if (opening && !opening.isCurrent()) { throw new CancellationError(); }
 				if (!options?.preserveFocus) {
+					opening?.willFocus();
 					chatView.focusInput();
 				}
 			}
@@ -251,7 +334,10 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 		this._widgets.push(newWidget);
 		this._onDidAddWidget.fire(newWidget);
 
-		if (!this._lastFocusedWidget) {
+		// An unfocused sidebar created by this current draft open is not a focus
+		// gesture. Its requested focus will be published after target binding.
+		if (!this._lastFocusedWidget && !(this.harnessUntitledOpening?.()
+			&& isIChatViewViewContext(newWidget.viewContext) && newWidget.viewContext.viewId === ChatViewId)) {
 			this.setLastFocusedWidget(newWidget);
 		}
 

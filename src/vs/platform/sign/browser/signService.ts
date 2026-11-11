@@ -58,6 +58,9 @@ export class SignService extends AbstractSignService implements ISignService {
 
 	@memoize
 	private async vsda(): Promise<typeof vsda_web> {
+		if (this.productService.vsdaEnabled === false) {
+			throw new Error("VSDA is not available in this product build");
+		}
 		const checkInterval = new WindowIntervalTimer();
 		let [wasm] = await Promise.all([
 			this.getWasmBytes(),

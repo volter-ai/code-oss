@@ -656,6 +656,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		if (controllerData?.controller.getChatSessionInputState) {
 			const result = await controllerData.controller.getChatSessionInputState(isUntitledChatSession(sessionResource) ? undefined : sessionResource, {
 				previousInputState: this._createInputStateFromOptions(controllerData.optionGroups ?? [], context.initialSessionOptions),
+				initialSessionOptions: context.initialSessionOptions ?? [],
 			}, token);
 			if (result) {
 				inputState = result;
@@ -761,9 +762,9 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			return;
 		}
 
-		// Temporary workaround: input state changes for one resource are propagated to all
-		// input states for the same resource type until we can make this session-specific.
-		for (const inputState of controllerData?.inputStates ?? []) {
+		// Route changes only to input states bound to this exact conversation.
+		for (const inputState of controllerData.inputStates) {
+			if (!isEqual(inputState.sessionResource ?? inputState.untitledSessionResource, sessionResource)) { continue; }
 			// Update the selected items on the groups before firing the change event
 			const updatedGroups = inputState.groups.map(group => {
 				const update = updates[group.id];
@@ -956,7 +957,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		if (controllerData?.controller.getChatSessionInputState) {
 			const result = await controllerData.controller.getChatSessionInputState(
 				resolvedResource,
-				{ previousInputState: this._createInputStateFromOptions(controllerData.optionGroups ?? [], initialSessionOptions) },
+				{ previousInputState: this._createInputStateFromOptions(controllerData.optionGroups ?? [], initialSessionOptions), initialSessionOptions: initialSessionOptions ?? [] },
 				token,
 			);
 			if (result) {
@@ -1157,7 +1158,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		const previousInputState = this._createInputStateFromOptions(controllerData.optionGroups ?? [], request.initialSessionOptions);
 		let inputState: vscode.ChatSessionInputState;
 		if (controllerData.controller.getChatSessionInputState) {
-			inputState = await controllerData.controller.getChatSessionInputState(undefined, { previousInputState }, token);
+			inputState = await controllerData.controller.getChatSessionInputState(undefined, { previousInputState, initialSessionOptions: request.initialSessionOptions ?? [] }, token);
 		} else {
 			inputState = previousInputState;
 		}
@@ -1238,7 +1239,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			return undefined;
 		}
 		const sessionResource = sessionResourceComponents ? URI.revive(sessionResourceComponents) : undefined;
-		const inputState = await handler(!sessionResource || isUntitledChatSession(sessionResource) ? undefined : sessionResource, { previousInputState: undefined }, token);
+		const inputState = await handler(!sessionResource || isUntitledChatSession(sessionResource) ? undefined : sessionResource, { previousInputState: undefined, initialSessionOptions: [] }, token);
 		if (!inputState) {
 			return undefined;
 		}
