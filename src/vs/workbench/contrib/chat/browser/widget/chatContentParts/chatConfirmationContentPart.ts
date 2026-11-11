@@ -12,18 +12,24 @@ import { isResponseVM } from '../../../common/model/chatViewModel.js';
 import { IChatWidgetService } from '../../chat.js';
 import { SimpleChatConfirmationWidget } from './chatConfirmationWidget.js';
 import { IChatContentPart, IChatContentPartRenderContext } from './chatContentParts.js';
+import { HarnessChatApprovalContentPart, isHarnessApproval } from '../../../../volter/browser/volterChatApproval.js';
 
 export class ChatConfirmationContentPart extends Disposable implements IChatContentPart {
 	public readonly domNode: HTMLElement;
 
 	constructor(
-		confirmation: IChatConfirmation,
+		private readonly confirmation: IChatConfirmation,
 		context: IChatContentPartRenderContext,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IChatService private readonly chatService: IChatService,
 		@IChatWidgetService chatWidgetService: IChatWidgetService,
 	) {
 		super();
+		if (isHarnessApproval(confirmation.data)) {
+			const approval = this._register(this.instantiationService.createInstance(HarnessChatApprovalContentPart, confirmation, context));
+			this.domNode = approval.domNode;
+			return;
+		}
 
 		const element = context.element;
 		const buttons = confirmation.buttons
@@ -67,7 +73,7 @@ export class ChatConfirmationContentPart extends Disposable implements IChatCont
 
 	hasSameContent(other: IChatProgressRenderableResponseContent): boolean {
 		// No other change allowed for this content type
-		return other.kind === 'confirmation';
+		return other.kind === 'confirmation' && (!isHarnessApproval(this.confirmation.data) || other === this.confirmation);
 	}
 
 	addDisposable(disposable: IDisposable): void {
