@@ -610,6 +610,9 @@ function prepareCopilotRipgrepShimTaskREH(platform: string, arch: string, destin
 		const nodeModulesDir = path.join(outputDir, 'node_modules');
 
 		const builtInCopilotExtensionDir = path.join(outputDir, 'extensions', 'copilot');
+		// VOLTER (overlaid tier — scripts/workbench/overlay.mjs): extensions/copilot is not in
+		// this release, so there is no built-in Copilot SDK to shim. VOLTER_NO_BUILTIN_COPILOT.
+		if (!fs.existsSync(builtInCopilotExtensionDir)) { return; }
 		prepareBuiltInCopilotRipgrepShim(platform, arch, builtInCopilotExtensionDir, nodeModulesDir);
 	};
 }
