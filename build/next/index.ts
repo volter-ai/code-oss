@@ -362,6 +362,9 @@ const serverWebResourcePatterns = [
 // Resources for standalone web target (browser-only, no server)
 const webResourcePatterns = [
 	...commonResourcePatterns,
+	// VOLTER (overlaid tier — web media, scripts/workbench/overlay.mjs)
+	'vs/workbench/contrib/volter/browser/media/**/*.*',
+	'vs/workbench/contrib/volterProduct/browser/media/**/*.*',
 
 	// Web HTML
 	'vs/code/browser/workbench/workbench.html',
