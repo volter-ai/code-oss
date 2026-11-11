@@ -35,10 +35,13 @@ import { ChatAgentLocation, ChatModeKind, IResolvedNewChatSessionType, SessionTy
 import { clearChatEditor } from '../../actions/chatClear.js';
 import { AgentHostSessionInputPills } from '../../agentSessions/agentHost/agentHostSessionInputPills.js';
 import { ChatEditorInput } from './chatEditorInput.js';
+import { HarnessChatNavigationPermit, IHarnessChatNavigationService } from '../../../../volter/browser/volterChatNavigation.js';
 import { ChatWidget } from '../../widget/chatWidget.js';
 import { IChatWidgetViewState, setModelPreservingInputTypedWhileLoading } from '../../chat.js';
 
 export interface IChatEditorOptions extends IEditorOptions {
+	/** Internal permit for a nested native load in the same guarded transaction. */
+	harnessNavigationPermit?: HarnessChatNavigationPermit;
 	/**
 	 * Input state of the model when the editor is opened. Currently needed since
 	 * new sessions are not persisted but may go away with
@@ -227,6 +230,13 @@ export class ChatEditor extends AbstractEditorWithViewState<IChatEditorViewState
 	}
 
 	override async setInput(input: ChatEditorInput, options: IChatEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
+		if (token.isCancellationRequested) { return; }
+		return this.instantiationService.invokeFunction(accessor => accessor.get(IHarnessChatNavigationService).run(input.sessionResource, async () => {
+			if (!token.isCancellationRequested) { await this.setInputAfterGuard(input, options, context, token); }
+		}, options?.harnessNavigationPermit));
+	}
+
+	private async setInputAfterGuard(input: ChatEditorInput, options: IChatEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
 		// Capture the input draft before the load window opens so text typed
 		// during loading is preserved when the model binds. See #325323.
 		const inputBeforeLoad = this.widget?.getInput() ?? '';

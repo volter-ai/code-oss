@@ -761,9 +761,9 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			return;
 		}
 
-		// Temporary workaround: input state changes for one resource are propagated to all
-		// input states for the same resource type until we can make this session-specific.
-		for (const inputState of controllerData?.inputStates ?? []) {
+		// Route changes only to input states bound to this exact conversation.
+		for (const inputState of controllerData.inputStates) {
+			if (!isEqual(inputState.sessionResource ?? inputState.untitledSessionResource, sessionResource)) { continue; }
 			// Update the selected items on the groups before firing the change event
 			const updatedGroups = inputState.groups.map(group => {
 				const update = updates[group.id];
