@@ -1,0 +1,297 @@
+{
+  "schema": "supercode.frontend.contract.v2",
+  "version": 2,
+  "canonical_sdk": "supercode.sdk.v1",
+  "description": "Language-neutral attachment facade over one SDK-owned runtime. Transport and client metadata are envelopes and never canonical session data.",
+  "opaque_extensions": {
+    "events": "FrontendEvent.payload",
+    "requests": "FrontendRequest.payload",
+    "compatibility": "FrontendRuntimeDescriptor.extensions",
+    "errors": "FrontendError.extensions",
+    "rule": "Unknown compatible fields are retained by clients and adapters but never written into canonical sessions, sidecars, reduction logs, or native exports."
+  },
+  "traced_needs": {
+    "source": "scripts/client-protocol-corpus/allowlist.json",
+    "families": [
+      "identity",
+      "history",
+      "cursor_replay",
+      "sequenced_events",
+      "capabilities",
+      "requests",
+      "semantic_actions",
+      "typed_errors",
+      "reconnect"
+    ],
+    "excluded_private_protocols": ["codex_app_server", "opencode_http", "goose_acp_extensions", "pi_rpc"]
+  },
+  "types": {
+    "JsonValue": {"kind": "json"},
+    "Empty": {"kind": "object", "fields": {}},
+    "ChatRole": {"kind": "enum", "values": ["system", "user", "assistant", "tool"]},
+    "FunctionCall": {
+      "kind": "object",
+      "fields": {
+        "name": {"type": "string"},
+        "arguments": {"type": "string"}
+      }
+    },
+    "ToolCall": {
+      "kind": "object",
+      "fields": {
+        "id": {"type": "string"},
+        "type": {"type": "string"},
+        "function": {"type": "FunctionCall"}
+      }
+    },
+    "ChatMessage": {
+      "kind": "object",
+      "fields": {
+        "role": {"type": "ChatRole"},
+        "content": {"type": {"kind": "union", "members": ["string", {"kind": "array", "items": "JsonValue"}]}, "optional": true},
+        "tool_calls": {"type": {"kind": "array", "items": "ToolCall"}, "optional": true},
+        "tool_call_id": {"type": "string", "optional": true},
+        "name": {"type": "string", "optional": true}
+      }
+    },
+    "FrontendActions": {
+      "kind": "object",
+      "fields": {
+        "submit": {"type": "boolean"},
+        "interrupt": {"type": "boolean"},
+        "steer": {"type": "boolean"},
+        "respond": {"type": "boolean"},
+        "detach": {"type": "boolean"},
+        "close": {"type": "boolean"}
+      }
+    },
+    "FrontendCommandDescriptor": {
+      "kind": "object",
+      "fields": {
+        "name": {"type": "string"},
+        "description": {"type": "string", "nullable": true},
+        "argument_hint": {"type": "string", "optional": true, "nullable": true}
+      }
+    },
+    "FrontendOperationKind": {"kind": "enum", "values": ["prompt", "file", "model", "session", "subagent", "image", "reduction", "replay"]},
+    "FrontendOperationDescriptor": {
+      "kind": "object",
+      "fields": {
+        "id": {"type": "string"},
+        "kind": {"type": "FrontendOperationKind"},
+        "command": {"type": "FrontendCommandDescriptor", "nullable": true}
+      }
+    },
+    "FrontendDisplayCapabilities": {
+      "kind": "object",
+      "fields": {
+        "event_kinds": {"type": {"kind": "array", "items": "string"}},
+        "opaque_fallback": {"type": "boolean"}
+      }
+    },
+    "FrontendTurnState": {"kind": "enum", "values": ["idle", "busy"]},
+    "FrontendConnectionState": {"kind": "enum", "values": ["connected", "shutting_down"]},
+    "FrontendRuntimeDescriptor": {
+      "kind": "object",
+      "extensible": true,
+      "fields": {
+        "schema_version": {"type": "u32", "const": 2},
+        "session_id": {"type": "string"},
+        "source_harness": {"type": "string", "nullable": true},
+        "emulation_profile": {"type": "string", "nullable": true},
+        "active_modules": {"type": {"kind": "array", "items": "string"}},
+        "commands": {"type": {"kind": "array", "items": "FrontendCommandDescriptor"}},
+        "operations": {"type": {"kind": "array", "items": "FrontendOperationDescriptor"}},
+        "actions": {"type": "FrontendActions"},
+        "display": {"type": "FrontendDisplayCapabilities"},
+        "model": {"type": "string"},
+        "turn_state": {"type": "FrontendTurnState"},
+        "connection_state": {"type": "FrontendConnectionState"},
+        "extensions": {"type": {"kind": "map", "values": "JsonValue"}, "optional": true}
+      }
+    },
+    "FrontendRequestKind": {"kind": "enum", "values": ["approval", "elicitation", "other"]},
+    "FrontendRequest": {
+      "kind": "object",
+      "extensible": true,
+      "fields": {
+        "id": {"type": "u64"},
+        "kind": {"type": "FrontendRequestKind"},
+        "payload": {"type": "JsonValue"}
+      }
+    },
+    "FrontendRequestEventPayload": {
+      "kind": "object",
+      "extensible": true,
+      "fields": {
+        "type": {"type": "string", "const": "request"},
+        "request": {"type": "FrontendRequest"}
+      }
+    },
+    "FrontendEventPayload": {"kind": "union", "members": ["FrontendRequestEventPayload", "JsonValue"]},
+    "FrontendEvent": {
+      "kind": "object",
+      "fields": {
+        "sequence": {"type": "u64"},
+        "kind": {"type": "string"},
+        "payload": {"type": "FrontendEventPayload"}
+      }
+    },
+    "FrontendAttachSnapshot": {
+      "kind": "object",
+      "fields": {
+        "descriptor": {"type": "FrontendRuntimeDescriptor"},
+        "history": {"type": {"kind": "array", "items": "ChatMessage"}},
+        "history_cursor": {"type": "u64"},
+        "replay": {"type": {"kind": "array", "items": "FrontendEvent"}}
+      }
+    },
+    "FrontendApprovalDecision": {"kind": "enum", "values": ["deny", "allow", "allow_for_session"]},
+    "FrontendElicitationAction": {"kind": "enum", "values": ["accept", "decline", "cancel"]},
+    "FrontendResponse": {
+      "kind": "tagged_union",
+      "tag": "kind",
+      "variants": {
+        "approval": {
+          "request_id": {"type": "u64"},
+          "decision": {"type": "FrontendApprovalDecision"}
+        },
+        "elicitation": {
+          "request_id": {"type": "u64"},
+          "action": {"type": "FrontendElicitationAction"},
+          "content": {"type": "JsonValue", "optional": true, "nullable": true}
+        },
+        "other": {
+          "request_id": {"type": "u64"},
+          "action": {"type": "FrontendElicitationAction"},
+          "content": {"type": "JsonValue", "optional": true, "nullable": true}
+        }
+      }
+    },
+    "FrontendOperationInvocation": {
+      "kind": "tagged_union",
+      "tag": "kind",
+      "variants": {
+        "prompt": {
+          "operation_id": {"type": "string"},
+          "arguments": {"type": "string"}
+        },
+        "replay": {
+          "operation_id": {"type": "string"},
+          "control": {"type": "string"}
+        }
+      }
+    },
+    "FrontendOperationResult": {
+      "kind": "tagged_union",
+      "tag": "kind",
+      "variants": {
+        "prompt": {"reply": {"type": "string"}},
+        "replay": {"status": {"type": "JsonValue"}}
+      }
+    },
+    "RuntimeControllerLease": {
+      "kind": "object",
+      "fields": {
+        "client_id": {"type": "string"},
+        "expires_at_ms": {"type": "u64"}
+      }
+    },
+    "RuntimeObserverLease": {
+      "kind": "object",
+      "fields": {
+        "client_id": {"type": "string"},
+        "last_seen_ms": {"type": "u64"}
+      }
+    },
+    "RuntimeLeaseSnapshot": {
+      "kind": "object",
+      "fields": {
+        "controller": {"type": "RuntimeControllerLease", "nullable": true},
+        "observers": {"type": {"kind": "array", "items": "RuntimeObserverLease"}},
+        "lease_ttl_ms": {"type": "u64"}
+      }
+    },
+    "FrontendErrorName": {
+      "kind": "enum",
+      "values": ["unauthenticated", "unauthorized", "controller_required", "lease_expired", "invalid_argument", "not_found", "busy", "unsupported_action", "execution", "transport"]
+    },
+    "FrontendError": {
+      "kind": "object",
+      "extensible": true,
+      "fields": {
+        "name": {"type": "FrontendErrorName"},
+        "message": {"type": "string"},
+        "code": {"type": "i64", "optional": true},
+        "operation": {"type": "string", "optional": true},
+        "permission": {"type": "string", "optional": true},
+        "holder": {"type": "string", "optional": true, "nullable": true},
+        "expiresAtMs": {"type": "u64", "optional": true, "nullable": true},
+        "extensions": {"type": {"kind": "map", "values": "JsonValue"}, "optional": true}
+      }
+    },
+    "AttachParams": {
+      "kind": "object",
+      "fields": {
+        "limit": {"type": "u64"},
+        "after_sequence": {"type": "u64", "optional": true}
+      }
+    },
+    "PromptParams": {"kind": "object", "fields": {"prompt": {"type": "string"}}},
+    "MultimodalPromptParams": {
+      "kind": "object",
+      "fields": {
+        "prompt": {"type": "string"},
+        "image_urls": {"type": {"kind": "array", "items": "string"}, "optional": true}
+      }
+    },
+    "RespondParams": {"kind": "object", "fields": {"response": {"type": "FrontendResponse"}}},
+    "InvokeParams": {"kind": "object", "fields": {"operation": {"type": "FrontendOperationInvocation"}}},
+    "Accepted": {"kind": "object", "fields": {"accepted": {"type": "boolean"}}},
+    "Reply": {"kind": "object", "fields": {"reply": {"type": "string"}}},
+    "Interrupted": {"kind": "object", "fields": {"interrupted": {"type": "boolean"}}},
+    "Queued": {"kind": "object", "fields": {"queued": {"type": "boolean"}}},
+    "TaskParams": {"kind": "object", "fields": {"task_id": {"type": "string"}}},
+    "Stopped": {"kind": "object", "fields": {"stopped": {"type": "boolean"}}},
+    "Closed": {"kind": "object", "fields": {"closed": {"type": "boolean"}}}
+  },
+  "methods": [
+    {"id": "describe", "wire": "frontend.v2.describe", "sdk_action": "resume", "params": "Empty", "result": "FrontendRuntimeDescriptor", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "attach", "wire": "frontend.v2.attach", "sdk_action": "events", "params": "AttachParams", "result": "FrontendAttachSnapshot", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "send_input", "wire": "frontend.v2.send_input", "sdk_action": "input", "params": "MultimodalPromptParams", "result": "Accepted", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "submit", "wire": "frontend.v2.submit", "sdk_action": "input", "params": "MultimodalPromptParams", "result": "Reply", "compatibility": "completion_waiting_alias", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "interrupt", "wire": "frontend.v2.interrupt", "sdk_action": "interrupt", "params": "Empty", "result": "Interrupted", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "steer", "wire": "frontend.v2.steer", "sdk_action": "steer", "params": "PromptParams", "result": "Queued", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "stop_task", "wire": "frontend.v2.stop_task", "sdk_action": "stop_task", "params": "TaskParams", "result": "Stopped", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "respond", "wire": "frontend.v2.respond", "sdk_action": "respond", "params": "RespondParams", "result": "Accepted", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "invoke", "wire": "frontend.v2.invoke", "sdk_action": "input", "params": "InvokeParams", "result": "FrontendOperationResult", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "lease", "wire": "frontend.v2.lease", "sdk_action": "events", "params": "Empty", "result": "RuntimeLeaseSnapshot", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "acquire_control", "wire": "frontend.v2.acquire_control", "sdk_action": "input", "params": "Empty", "result": "RuntimeLeaseSnapshot", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "take_control", "wire": "frontend.v2.take_control", "sdk_action": "input", "params": "Empty", "result": "RuntimeLeaseSnapshot", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "heartbeat", "wire": "frontend.v2.heartbeat", "sdk_action": "events", "params": "Empty", "result": "RuntimeLeaseSnapshot", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "detach", "wire": "frontend.v2.detach", "sdk_action": "events", "params": "Empty", "result": "RuntimeLeaseSnapshot", "transports": ["local", "http", "websocket", "acp"]},
+    {"id": "close", "wire": "frontend.v2.close", "sdk_action": "close", "params": "Empty", "result": "Closed", "transports": ["local", "http", "websocket", "acp"]}
+  ],
+  "events": {
+    "wire": "frontend.v2.event",
+    "type": "FrontendEvent",
+    "ordering": "strictly_increasing_sequence",
+    "reconnect": "attach.after_sequence"
+  },
+  "compatibility_aliases": {
+    "frontend.describe": "describe",
+    "frontend.attach": "attach",
+    "frontend.send_input": "send_input",
+    "frontend.invoke": "invoke",
+    "frontend.lease": "lease",
+    "frontend.acquire_control": "acquire_control",
+    "frontend.take_control": "take_control",
+    "frontend.heartbeat": "heartbeat",
+    "frontend.detach": "detach",
+    "frontend.close": "close",
+    "submit": "submit",
+    "interrupt": "interrupt",
+    "steer": "steer",
+    "respond": "respond"
+  }
+}
