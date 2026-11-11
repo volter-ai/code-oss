@@ -7,6 +7,8 @@ import './media/chat.css';
 import './media/chatAgentHover.css';
 import './media/chatViewWelcome.css';
 import * as dom from '../../../../../base/browser/dom.js';
+import { EventType as TouchEventType } from '../../../../../base/browser/touch.js';
+import { IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
 import { IMouseWheelEvent } from '../../../../../base/browser/mouseEvent.js';
 import { disposableTimeout, timeout } from '../../../../../base/common/async.js';
@@ -93,6 +95,7 @@ import { ChatListWidget } from './chatListWidget.js';
 import { ChatFindWidget, IChatFindHost } from './chatFind/chatFindWidget.js';
 import { ChatEditorOptions } from './chatOptions.js';
 import { ChatViewWelcomePart, IChatViewWelcomeContent } from '../viewsWelcome/chatViewWelcomeController.js';
+import { ChatSetupState, readChatSetupState, showChatSetupProgress } from '../../../volter/browser/volterChatWelcome.js';
 import { hasImmutablePrimaryWorkingDirectory, resolveFolderPickerDecisionUpdate, IAgentHostNewSessionFolderService } from '../agentSessions/agentHost/agentHostNewSessionFolderService.js';
 import { IAgentHostCustomizationService } from '../agentSessions/agentHost/agentHostCustomizationService.js';
 import { IChatTipService } from '../chatTipService.js';
@@ -442,11 +445,19 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 	private _inputVisible = true;
 	private _readOnly = false;
+	private _modelReadOnly = false;
+	private _harnessInactive = false;
 
 	private _instructionFilesCheckPromise: Promise<boolean> | undefined;
 	private _instructionFilesExist: boolean | undefined;
 
 	private _isRenderingWelcome = false;
+	/** The chat extension's setup state for this conversation once a read answered, and the newest read. */
+	private _setupWelcome: { readonly state: ChatSetupState | undefined } | undefined;
+	private _setupWelcomeRead = 0;
+	/** The editor's own placeholder while the setup state's replaces it. */
+	private _setupComposer: { readonly placeholder: string | undefined } | undefined;
+	private readonly _setupProgress = this._register(new MutableDisposable());
 	private _isLoading = false;
 
 	/**
@@ -578,6 +589,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		@IDialogService private readonly dialogService: IDialogService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IHarnessChatNavigationService private readonly harnessNavigation: IHarnessChatNavigationService,
 		@IChatService private readonly chatService: IChatService,
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
@@ -613,6 +625,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	) {
 		super();
 		this._persistentContentHeight = viewOptions.persistentContentHeight ?? 0;
+		this._register(this.harnessNavigation.onDidChangeActiveResource(() => this.updateHarnessInactive()));
+		this._register(this.onDidChangeViewModel(() => this.updateHarnessInactive()));
 
 		this.readOnlyBanner = viewOptions.isSessionsWindow
 			? undefined
@@ -683,6 +697,14 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		ChatContextKeys.inQuickChat.bindTo(contextKeyService).set(isQuickChat(this));
 		ChatContextKeys.findSupported.bindTo(contextKeyService).set(!!this.viewOptions.enableFind);
 		this._register(this.onDidChangeViewModel(() => this._onDidChangeFindableContent.fire()));
+		// A setup state read for one conversation never draws on, or disables, another.
+		this._register(this.onDidChangeViewModel(() => {
+			this._setupWelcome = undefined;
+			this._setupWelcomeRead++;
+			if (!this.isEmpty()) {
+				this.applySetupWelcome(undefined);
+			}
+		}));
 		this.agentInInput = ChatContextKeys.inputHasAgent.bindTo(contextKeyService);
 		this.requestInProgress = ChatContextKeys.requestInProgress.bindTo(contextKeyService);
 		this.hasActiveRequest = ChatContextKeys.hasActiveRequest.bindTo(contextKeyService);
@@ -1102,6 +1124,31 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		const renderInputToolbarBelowInput = this.viewOptions.renderInputToolbarBelowInput ?? false;
 
 		this.container = dom.append(parent, $('.interactive-session'));
+		// Passive history remains focusable, selectable and copyable. It cannot invoke
+		// transcript buttons/links, tool approvals, questions, restores or handoffs.
+		const blockInactiveAction = (event: globalThis.Event) => {
+			if (!this._harnessInactive) { return; }
+			const target = event.target as Element | null;
+			if (!target || typeof target.closest !== 'function') { return; }
+			const question = target.closest('.chat-question-carousel-container');
+			const interactive = target.closest('a,button,input,textarea,[role="button"],[role="checkbox"],[role="radio"],[role="combobox"],[role="option"],[role="switch"],[role="slider"],[role="spinbutton"],[role^="menuitem"],[contenteditable="true"]');
+			const keyboardScope = event.type === 'keydown' && (question || target.closest('.chat-tool-confirmation-carousel,.chat-confirmation-widget'));
+			if (!interactive && !keyboardScope) { return; }
+			if ('key' in event) {
+				const key = String(event.key);
+				const readingShortcut = 'ctrlKey' in event && (event.ctrlKey || ('metaKey' in event && event.metaKey)) && ['a', 'c', 'f'].includes(key.toLowerCase());
+				if (readingShortcut || ['Tab', 'Shift', 'Control', 'Alt', 'Meta', 'F3'].includes(key) || (key === 'Escape' && !question)) { return; }
+			}
+			event.preventDefault();
+			event.stopImmediatePropagation();
+		};
+		this._register(dom.addDisposableListener(this.container, 'click', blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, TouchEventType.Tap, blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, 'dblclick', blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, 'keydown', blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, 'pointerdown', blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, 'beforeinput', blockInactiveAction, true));
+		this._register(dom.addDisposableListener(this.container, 'change', blockInactiveAction, true));
 		const targetWindow = dom.getWindow(this.container);
 		const focusTracker = this._register(dom.trackFocus(this.container));
 		this._register(focusTracker.onDidFocus(() => this.markSessionStateIndicatorVisited()));
@@ -1451,6 +1498,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 			if (items.length > 0) {
 				this.updateChatViewVisibility();
+				this.applySetupWelcome(undefined);
 			} else {
 				this.renderWelcomeViewContentIfNeeded();
 			}
@@ -1556,7 +1604,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	/**
 	 * Renders the welcome view content when needed.
 	 */
-	private renderWelcomeViewContentIfNeeded() {
+	private renderWelcomeViewContentIfNeeded(readSetup = true) {
 		if (this._isRenderingWelcome) {
 			return;
 		}
@@ -1575,6 +1623,21 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			}
 
 			const numItems = this.viewModel?.getItems().length ?? 0;
+			// The setup state draws only an empty chat, from the newest read for this conversation.
+			// Until the first read answers, the welcome it may replace stays hidden and the composer
+			// as it was, rather than flashing; with no extension to ask, nothing waits.
+			const asked = !numItems && readSetup && this.readSetupWelcome();
+			if (!numItems && readSetup && !asked) {
+				// Nothing can answer any more (say the extension host restarted): drop the last
+				// answer, so the Markdown welcome and a usable composer come back.
+				this._setupWelcome = undefined;
+			}
+			const setup = numItems ? undefined : this._setupWelcome?.state;
+			const pending = asked && !this._setupWelcome;
+			this.welcomeMessageContainer.style.visibility = pending ? 'hidden' : '';
+			if (!pending) {
+				this.applySetupWelcome(setup);
+			}
 			if (!numItems) {
 				const defaultAgent = this.chatAgentService.getDefaultAgent(this.location, this.input.currentModeKind);
 				let additionalMessage: string | IMarkdownString | undefined;
@@ -1587,7 +1650,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				if (!additionalMessage && !this._lockedAgent) {
 					additionalMessage = this._getGenerateInstructionsMessage();
 				}
-				const welcomeContent = this.getWelcomeViewContent(additionalMessage);
+				const welcomeContent: IChatViewWelcomeContent = { ...this.getWelcomeViewContent(additionalMessage), setup };
 				if (!this.welcomePart.value || this.welcomePart.value.needsRerender(welcomeContent)) {
 					dom.clearNode(this.welcomeMessageContainer);
 
@@ -1596,7 +1659,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 						welcomeContent,
 						{
 							location: this.location,
-							isWidgetAgentWelcomeViewContent: this.input?.currentModeKind === ChatModeKind.Agent
+							isWidgetAgentWelcomeViewContent: this.input?.currentModeKind === ChatModeKind.Agent,
+							additionalMessageLinksToButtons: true
 						}
 					);
 					dom.append(this.welcomeMessageContainer, this.welcomePart.value.element);
@@ -1606,6 +1670,44 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			this.updateChatViewVisibility();
 		} finally {
 			this._isRenderingWelcome = false;
+		}
+	}
+
+	/** Asks the chat extension for its setup state; false when no extension answers that. */
+	private readSetupWelcome(): boolean {
+		const read = ++this._setupWelcomeRead;
+		const reply = this.instantiationService.invokeFunction(readChatSetupState);
+		reply?.then(state => {
+			// A newer render, or another conversation, supersedes this read.
+			if (read === this._setupWelcomeRead && !this._store.isDisposed) {
+				this._setupWelcome = { state };
+				this.renderWelcomeViewContentIfNeeded(false);
+			}
+		});
+		return !!reply;
+	}
+
+	/**
+	 * While no agent is ready the composer stays in place with the extension's placeholder (the
+	 * editor's own placeholder option, kept and restored as dictation does) and takes no input
+	 * unless the state allows it. A busy agent runs the view's progress bar.
+	 */
+	private applySetupWelcome(setup: ChatSetupState | undefined): void {
+		const shown = setup?.visible ? setup : undefined;
+		const input = this.inputPartDisposable.value;
+		if (input && shown) {
+			this._setupComposer ??= { placeholder: input.inputEditor.getRawOptions().placeholder };
+			input.inputEditor.updateOptions({ placeholder: shown.composerPlaceholder, readOnly: !shown.composerEnabled });
+		} else if (input && this._setupComposer) {
+			// A placeholder the conversation set meanwhile (setModel, a locked agent) wins over the saved one.
+			input.inputEditor.updateOptions({ placeholder: this.viewModel?.inputPlaceholder ?? this._setupComposer.placeholder, readOnly: false });
+			this._setupComposer = undefined;
+		}
+		input?.inputContainerElement?.classList.toggle('volter-chat-setup-disabled', !!shown && !shown.composerEnabled);
+		const busy = !!shown?.rows.some(row => row.busy);
+		if (busy !== !!this._setupProgress.value) {
+			this._setupProgress.value = busy && isIChatViewViewContext(this.viewContext)
+				? this.instantiationService.invokeFunction(showChatSetupProgress, this.viewContext.viewId) : undefined;
 		}
 	}
 
@@ -2029,7 +2131,19 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	 * Read-only chats hide the composer and expose a context key so mutating
 	 * actions (e.g. Start Over, Restore Checkpoint) are not offered.
 	 */
+	private updateHarnessInactive(): void {
+		const resource = this.viewModel?.sessionResource;
+		const inactive = resource?.scheme === 'supercode' && !resource.path.startsWith('/untitled-')
+			&& resource.toString() !== this.harnessNavigation.activeResource;
+		if (inactive !== this._harnessInactive) {
+			this._harnessInactive = inactive;
+			this.setReadOnly(this._modelReadOnly);
+		}
+	}
+
 	setReadOnly(readOnly: boolean): void {
+		this._modelReadOnly = readOnly;
+		readOnly ||= this._harnessInactive;
 		const wasReadOnly = this._readOnly;
 		this._readOnly = readOnly;
 		this._readOnlyContextKey.set(readOnly);
@@ -2046,6 +2160,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		} else if (wasReadOnly) {
 			this.renderChatSuggestNextWidget();
 		}
+		this.readOnlyBanner?.setMessage(this._harnessInactive && !this._modelReadOnly
+			? localize('chat.inactiveConversation', "Inactive conversation. Open it from history to continue.") : undefined);
 		this.readOnlyBanner?.setVisible(readOnly);
 		this.setInputVisible(!readOnly);
 		// Authoritative over the lock/unlock `editable` toggles below.
