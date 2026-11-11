@@ -35,6 +35,7 @@ import { IHarnessChatNavigationService } from './volterChatNavigation.js';
 import { isHarnessApproval } from './volterChatApproval.js';
 import { IChatToolInvocation, IChatToolInvocationSerialized, ToolConfirmKind } from '../../common/chatService/chatService.js';
 import { IChatProgressResponseContent } from '../../common/model/chatModel.js';
+import { isUntitledChatSession } from '../../common/model/chatUri.js';
 import { isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import './media/panel-states.css';
 
@@ -114,11 +115,17 @@ registerAction2(class extends Action2 {
 		// on every page reload, and the extension is never told of it (focus is reported once a harness chat is
 		// seen). Counted as focus, it refused every readiness reveal after a reload, leaving the running turn and
 		// its approval cards out of sight (t_39dac582). It also matches no focus; a chat with requests or typed input,
-		// and every harness chat, still guard. An extension that was told of the blank chat still matches it exactly.
+		// and every harness conversation, still guard. An extension that was told of the blank chat still matches it
+		// exactly. Where the harness is the default agent, the blank chat a reload restores is that agent's untitled
+		// session (`getNewChatSessionResource`: `supercode:/untitled-…`), not a conversation: blank all the same
+		// (`isUntitledChatSession`). Counted as a harness chat, it refused the reveal of the restored conversation
+		// whenever the extension had not yet been told of it, and the reopened Chat showed an empty chat.
 		const resourceOf = (widget: typeof focused) => widget?.viewModel?.sessionResource.toString() ?? null;
 		const blank = (widget: typeof focused) => {
 			const viewModel = widget?.viewModel;
-			return Boolean(viewModel && viewModel.sessionResource.scheme !== 'supercode' && !viewModel.model.hasRequests && !widget!.getInput().trim());
+			const resource = viewModel?.sessionResource;
+			return Boolean(viewModel && resource && (resource.scheme !== 'supercode' || isUntitledChatSession(resource))
+				&& !viewModel.model.hasRequests && !widget!.getInput().trim());
 		};
 		// While the Chat view is hidden (and no chat editor holds the conversation; revealing one opens no container), a
 		// readiness reveal makes the conversation the view's own without opening it or focusing any widget. Activation

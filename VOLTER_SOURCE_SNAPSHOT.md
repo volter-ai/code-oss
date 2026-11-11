@@ -89,7 +89,9 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   before the view exists survives its creation. `volter.chat.revealReadySession` (`volterHarness/volterChat.ts`) uses
   it while the Chat view is hidden: a conversation becoming ready leaves the person's layout (a collapsed auxiliary
   bar) as restored, and its focus guard counts the hidden view's conversation as the focus that activation reported;
-  `volter.chat.openSession` still reveals.
+  `volter.chat.openSession` still reveals. A blank chat guards nothing, and that includes the default agent's untitled
+  session a reload restores (`supercode:/untitled-…`, `isUntitledChatSession` in `chat/common/model/chatUri.ts`).
+  Before, the guard refused the restored conversation's reveal and the reopened Chat showed an empty chat.
 - **Chat's rendered transcript can be read.** `volter.chat.transcript` (`volterHarness/volterChat.ts`) returns the
   focused (or named) conversation's items from `ChatViewModel.getItems()`, the list `ChatListRenderer` renders: each
   request attributed to the person, or to the system when `isSystemInitiated` (shown as its `systemInitiatedLabel`);
