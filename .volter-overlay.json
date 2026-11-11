@@ -1,0 +1,22 @@
+{
+  "product": "model-editor",
+  "commit": "f16dc165c0dffe701a7bbf59aefb1c662b206cee",
+  "editorSource": {
+    "repository": "https://github.com/volter-ai/editor",
+    "revision": "467cb983a14d17d172d8a77a61536fc1d191b2d6",
+    "dirty": false
+  },
+  "kit": "packages/editor-core/workbench",
+  "productHalf": "packages/model-editor/workbench",
+  "extensions": [
+    "volter-keymaps",
+    "theme-blender",
+    "supercode-chat"
+  ],
+  "lookTiers": [],
+  "chatExtension": {
+    "id": "volter-ai-dev.supercode-frontend-vscode",
+    "version": "0.1.31"
+  },
+  "overlaidAt": "2026-10-06T00:33:59.570Z"
+}

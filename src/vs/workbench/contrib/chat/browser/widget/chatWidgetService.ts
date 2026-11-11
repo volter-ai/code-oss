@@ -20,6 +20,7 @@ import { ChatViewId, ChatViewPaneTarget, IChatWidget, IChatWidgetService, IQuick
 import { ChatEditor, IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatEditorInput } from '../widgetHosts/editor/chatEditorInput.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
+import { HarnessChatNavigationPermit, IHarnessChatNavigationService } from '../../../volter/browser/volterChatNavigation.js';
 
 export class ChatWidgetService extends Disposable implements IChatWidgetService {
 
@@ -54,6 +55,7 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 		@IEditorService private readonly editorService: IEditorService,
 		@IChatService private readonly chatService: IChatService,
 		@ILogService private readonly logService: ILogService,
+		@IHarnessChatNavigationService private readonly harnessNavigation: IHarnessChatNavigationService,
 	) {
 		super();
 	}
@@ -88,8 +90,20 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 	}
 
 	async reveal(widget: IChatWidget, preserveFocus?: boolean): Promise<boolean> {
+		const resource = widget.viewModel?.sessionResource;
+		return resource ? this.harnessNavigation.run(resource, async permit => {
+			const revealed = await this.revealAfterGuard(widget, preserveFocus, permit);
+			if (permit && (!revealed || !this._widgets.includes(widget) || widget.viewModel?.sessionResource.toString() !== resource.toString())) {
+				throw new Error('The requested conversation was not revealed by native Chat.');
+			}
+			return revealed;
+		}, undefined,
+			() => this._widgets.includes(widget) && widget.viewModel?.sessionResource.toString() === resource.toString()) : this.revealAfterGuard(widget, preserveFocus);
+	}
+
+	private async revealAfterGuard(widget: IChatWidget, preserveFocus?: boolean, permit?: HarnessChatNavigationPermit): Promise<boolean> {
 		if (widget.viewModel?.sessionResource) {
-			const alreadyOpenWidget = await this.revealSessionIfAlreadyOpen(widget.viewModel.sessionResource, { preserveFocus });
+			const alreadyOpenWidget = await this.revealSessionIfAlreadyOpen(widget.viewModel.sessionResource, { preserveFocus, harnessNavigationPermit: permit });
 			if (alreadyOpenWidget) {
 				return true;
 			}
@@ -112,6 +126,17 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 	openSession(sessionResource: URI, target?: typeof ChatViewPaneTarget, options?: IChatEditorOptions): Promise<IChatWidget | undefined>;
 	openSession(sessionResource: URI, target?: PreferredGroup, options?: IChatEditorOptions): Promise<IChatWidget | undefined>;
 	async openSession(sessionResource: URI, target?: typeof ChatViewPaneTarget | PreferredGroup, options?: IChatEditorOptions): Promise<IChatWidget | undefined> {
+		return this.harnessNavigation.run(sessionResource, async permit => {
+			const widget = await this.openSessionAfterGuard(sessionResource, target, options, permit);
+			if (permit && widget?.viewModel?.sessionResource.toString() !== sessionResource.toString()) {
+				throw new Error('The requested conversation was not selected by native Chat.');
+			}
+			return widget;
+		}, options?.harnessNavigationPermit);
+	}
+
+	private async openSessionAfterGuard(sessionResource: URI, target?: typeof ChatViewPaneTarget | PreferredGroup, options?: IChatEditorOptions, permit?: HarnessChatNavigationPermit): Promise<IChatWidget | undefined> {
+		if (permit) { options = { ...options, harnessNavigationPermit: permit }; }
 		const t0 = Date.now();
 		const targetKind = target === ChatViewPaneTarget ? 'view' : (typeof target === 'undefined' ? 'undefined' : 'editor');
 		this.logService.trace(`[ChatWidgetService] openSession start uri=${sessionResource.toString()} target=${targetKind}`);
@@ -131,7 +156,7 @@ export class ChatWidgetService extends Disposable implements IChatWidgetService 
 		if (target === ChatViewPaneTarget || typeof target === 'undefined') {
 			const chatView = await this.viewsService.openView<ChatViewPane>(ChatViewId, !options?.preserveFocus);
 			if (chatView) {
-				await chatView.loadSession(sessionResource, options?.sessionTypeSelectionReason);
+				await chatView.loadSession(sessionResource, options?.sessionTypeSelectionReason, permit);
 				if (!options?.preserveFocus) {
 					chatView.focusInput();
 				}

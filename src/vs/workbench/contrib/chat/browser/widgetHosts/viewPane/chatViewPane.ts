@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/chatViewPane.css';
+import { HarnessChatNavigationPermit, IHarnessChatNavigationService } from '../../../../volter/browser/volterChatNavigation.js';
 import { $, addDisposableListener, append, EventHelper, EventType, getWindow, setVisibility } from '../../../../../../base/browser/dom.js';
 import { StandardMouseEvent } from '../../../../../../base/browser/mouseEvent.js';
 import { Button } from '../../../../../../base/browser/ui/button/button.js';
@@ -1449,7 +1450,16 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		this.updateActions();
 	}
 
-	async loadSession(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason): Promise<IChatModel | undefined> {
+	async loadSession(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason, permit?: HarnessChatNavigationPermit): Promise<IChatModel | undefined> {
+		// Keep refusal outside the load's cancellation, clear timer and empty-model recovery.
+		return this.instantiationService.invokeFunction(accessor => accessor.get(IHarnessChatNavigationService).run(sessionResource, async navigationPermit => {
+			const model = await this.loadSessionAfterGuard(sessionResource, sessionTypeSelectionReason);
+			if (navigationPermit && model?.sessionResource.toString() !== sessionResource.toString()) { throw new Error('The requested conversation was not selected by the native Chat view.'); }
+			return model;
+		}, permit));
+	}
+
+	private async loadSessionAfterGuard(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason): Promise<IChatModel | undefined> {
 		const t0 = Date.now();
 		this.logService.trace(`[ChatViewPane] loadSession start uri=${sessionResource.toString()}`);
 
