@@ -24,6 +24,8 @@ import { IOpenerService } from '../../../../../platform/opener/common/opener.js'
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { ChatAgentLocation } from '../../common/constants.js';
 import { chatViewsWelcomeRegistry, IChatViewsWelcomeDescriptor } from './chatViewsWelcome.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { ChatSetupState, renderChatSetupWelcome, renderChatSignedInNotice } from '../../../volter/browser/volterChatWelcome.js';
 
 const $ = dom.$;
 
@@ -126,10 +128,13 @@ export interface IChatViewWelcomeContent {
 	tips?: IMarkdownString;
 	readonly inputPart?: HTMLElement;
 	readonly useLargeIcon?: boolean;
+	/** The chat extension's setup state; while visible it replaces the Markdown welcome. */
+	readonly setup?: ChatSetupState;
 }
 
 export interface IChatViewWelcomeRenderOptions {
 	readonly firstLinkToButton?: boolean;
+	readonly additionalMessageLinksToButtons?: boolean;
 	readonly location: ChatAgentLocation;
 	readonly isWidgetAgentWelcomeViewContent?: boolean;
 }
@@ -143,12 +148,22 @@ export class ChatViewWelcomePart extends Disposable {
 		@IOpenerService private openerService: IOpenerService,
 		@ILogService private logService: ILogService,
 		@IMarkdownRendererService private readonly markdownRendererService: IMarkdownRendererService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 
 		this.element = dom.$('.chat-welcome-view');
 
 		try {
+			// No agent ready: the extension's setup state replaces the Markdown welcome.
+			// Without a visible one, everything below renders as it always has.
+			if (content.setup?.visible) {
+				this._register(renderChatSetupWelcome(this.element, content.setup, this.commandService, this.logService));
+				return;
+			}
+			if (content.setup?.signedInNotice) {
+				renderChatSignedInNotice(this.element, content.setup.signedInNotice);
+			}
 
 			// Icon
 			const icon = dom.append(this.element, $('.chat-welcome-view-icon'));
@@ -188,7 +203,7 @@ export class ChatViewWelcomePart extends Disposable {
 				if (typeof content.additionalMessage === 'string') {
 					disclaimers.textContent = content.additionalMessage;
 				} else {
-					const additionalMessageResult = this.renderMarkdownMessageContent(content.additionalMessage, options);
+					const additionalMessageResult = this.renderMarkdownMessageContent(content.additionalMessage, options, options?.additionalMessageLinksToButtons);
 					disclaimers.appendChild(additionalMessageResult.element);
 				}
 			}
@@ -205,28 +220,44 @@ export class ChatViewWelcomePart extends Disposable {
 	}
 
 	public needsRerender(content: IChatViewWelcomeContent): boolean {
+		// A visible setup state replaces the Markdown welcome, so then it alone decides.
+		const setupChanged = JSON.stringify(this.content.setup) !== JSON.stringify(content.setup);
+		if (this.content.setup?.visible && content.setup?.visible) {
+			return setupChanged;
+		}
 		// Heuristic based on content that changes between states
-		return !!(
+		return setupChanged || !!(
 			this.content.title !== content.title ||
 			this.content.message.value !== content.message.value ||
 			this.content.additionalMessage !== content.additionalMessage ||
 			this.content.tips?.value !== content.tips?.value);
 	}
 
-	private renderMarkdownMessageContent(content: IMarkdownString, options: IChatViewWelcomeRenderOptions | undefined): IRenderedMarkdown {
+	private renderMarkdownMessageContent(content: IMarkdownString, options: IChatViewWelcomeRenderOptions | undefined, standaloneCommands = false): IRenderedMarkdown {
 		const messageResult = this._register(this.markdownRendererService.render(content));
+		const allowedCommands = content.isTrusted === true ? true
+			: typeof content.isTrusted === 'object' ? content.isTrusted.enabledCommands : [];
+		// Like viewsWelcome, a paragraph containing only a link is an action.
+		// Inline links and untrusted commands retain ordinary Markdown rendering.
 		// eslint-disable-next-line no-restricted-syntax
 		const firstLink = options?.firstLinkToButton ? messageResult.element.querySelector('a') : undefined;
-		if (firstLink) {
-			const target = firstLink.getAttribute('data-href');
-			const button = this._register(new Button(firstLink.parentElement!, defaultButtonStyles));
-			button.label = firstLink.textContent ?? '';
+		// eslint-disable-next-line no-restricted-syntax
+		const links = standaloneCommands ? Array.from(messageResult.element.querySelectorAll('p > a:only-child')).filter(link => {
+			const target = link.getAttribute('data-href');
+			return link.parentElement?.textContent?.trim() === link.textContent?.trim()
+				&& target?.startsWith('command:')
+				&& (allowedCommands === true || allowedCommands.includes(URI.parse(target).path));
+		}) : firstLink ? [firstLink] : [];
+		for (const link of links) {
+			const target = link.getAttribute('data-href');
+			const button = this._register(new Button(link.parentElement!, defaultButtonStyles));
+			button.label = link.textContent ?? '';
 			if (target) {
 				this._register(button.onDidClick(() => {
-					this.openerService.open(target, { allowCommands: true });
+					this.openerService.open(target, { allowCommands: standaloneCommands ? allowedCommands : true });
 				}));
 			}
-			firstLink.replaceWith(button.element);
+			link.replaceWith(button.element);
 		}
 		return messageResult;
 	}
