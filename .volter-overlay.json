@@ -1,0 +1,23 @@
+{
+  "product": "cyclotron",
+  "target": "reh-web",
+  "commit": "96301ea10af8923940ce0e661121fbcd17ae1e1c",
+  "editorSource": {
+    "repository": "https://github.com/volter-ai/editor",
+    "revision": "adaa9d862c09353ce10096f25753cb485ed7383d",
+    "dirty": false
+  },
+  "kit": "packages/editor-core/workbench",
+  "productHalf": "packages/cyclotron/workbench",
+  "extensions": [
+    "volter-editor",
+    "cyclotron-defaults",
+    "theme-tools",
+    "supercode-chat"
+  ],
+  "chatExtension": {
+    "id": "volter-ai-dev.supercode-frontend-vscode",
+    "version": "0.1.70"
+  },
+  "overlaidAt": "2026-11-10T20:22:03.647Z"
+}

@@ -1,0 +1,36 @@
+{
+	"name": "volter-editor",
+	"displayName": "Volter Editor",
+	"description": "The Volter editor's own colour themes. Its commands, chords and agent tools are the workbench half's code (volterEditorActions.ts, volterEditorTools.ts).",
+	"categories": [
+		"Themes"
+	],
+	"version": "0.0.1",
+	"publisher": "vscode",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"contributes": {
+		"themes": [
+			{
+				"id": "graphite-dark",
+				"label": "Graphite Dark",
+				"uiTheme": "vs-dark",
+				"path": "./themes/graphite-dark.json"
+			},
+			{
+				"id": "graphite-neutral",
+				"label": "Graphite Neutral",
+				"uiTheme": "vs-dark",
+				"path": "./themes/graphite-neutral.json"
+			},
+			{
+				"id": "midnight-high-contrast",
+				"label": "Midnight High Contrast",
+				"uiTheme": "vs-dark",
+				"path": "./themes/midnight-high-contrast.json"
+			}
+		]
+	}
+}

@@ -1,0 +1,46 @@
+{
+  "name": "cyclotron-defaults",
+  "displayName": "Cyclotron defaults",
+  "description": "Cyclotron's defaults: its look, Blender's colour theme, style and product icon theme (all @volter/editor-blender's), and the workbench layout nearest Blender's: no activity bar, properties on the right, compact tabs, no minimap or breadcrumbs.",
+  "version": "0.0.1",
+  "publisher": "vscode",
+  "license": "MIT",
+  "engines": {
+    "vscode": "*"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  },
+  "contributes": {
+    "configurationDefaults": {
+      "workbench.colorTheme": "blender",
+      "volter.style": "blender",
+      "workbench.productIconTheme": "blender",
+      "workbench.activityBar.location": "hidden",
+      "workbench.sideBar.location": "right",
+      "workbench.statusBar.visible": true,
+      "workbench.layoutControl.enabled": false,
+      "workbench.navigationControl.enabled": false,
+      "window.commandCenter": true,
+      "workbench.editor.showTabs": "multiple",
+      "window.density.editorTab": "compact",
+      "workbench.editor.tabSizing": "shrink",
+      "breadcrumbs.enabled": false,
+      "editor.minimap.enabled": false,
+      "workbench.startupEditor": "none",
+      "workbench.tips.enabled": false,
+      "workbench.iconTheme": null,
+      "workbench.tree.indent": 12,
+      "workbench.tree.renderIndentGuides": "none",
+      "workbench.panel.defaultLocation": "bottom",
+      "workbench.editor.editorActionsLocation": "hidden",
+      "editor.fontSize": 12,
+      "editor.lineHeight": 18,
+      "window.customTitleBarVisibility": "auto",
+      "window.titleBarStyle": "custom",
+      "workbench.tree.expandMode": "singleClick"
+    }
+  }
+}
