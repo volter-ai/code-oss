@@ -86,7 +86,7 @@ const compilations = [
 	'extensions/tunnel-forwarding/tsconfig.json',
 	'extensions/typescript-language-features/web/tsconfig.json',
 	'extensions/typescript-language-features/tsconfig.json',
-	'extensions/vscode-api-tests/tsconfig.json',
+	// VOLTER (overlaid tier): vscode-api-tests is not in this build.
 	'extensions/vscode-colorize-tests/tsconfig.json',
 	'extensions/vscode-colorize-perf-tests/tsconfig.json',
 	'extensions/vscode-test-resolver/tsconfig.json',

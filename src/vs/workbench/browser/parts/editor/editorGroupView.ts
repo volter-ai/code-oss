@@ -47,6 +47,7 @@ import { EditorActivation, IEditorOptions } from '../../../../platform/editor/co
 import { IFileDialogService, ConfirmResult, IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IFilesConfigurationService, AutoSaveMode } from '../../../services/filesConfiguration/common/filesConfigurationService.js';
 import { URI } from '../../../../base/common/uri.js';
+import { HarnessChatNavigationPermit, IHarnessChatNavigationService } from '../../../contrib/volter/browser/volterChatNavigation.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { isLinux, isMacintosh, isNative, isWindows } from '../../../../base/common/platform.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -1187,7 +1188,28 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 		});
 	}
 
+	private harnessNavigationRequest = 0;
+
 	private async doOpenEditor(editor: EditorInput, options?: IEditorOptions, internalOptions?: IInternalEditorOpenOptions): Promise<IEditorPane | undefined> {
+		const request = ++this.harnessNavigationRequest;
+		const resource = (editor as EditorInput & { readonly sessionResource?: URI }).sessionResource ?? editor.resource;
+		const passive = (options as (IEditorOptions & { harnessPassive?: boolean }) | undefined)?.harnessPassive;
+		if (!resource || resource.scheme !== 'supercode' || options?.inactive || passive) {
+			return this.doOpenEditorAfterHarnessGuard(editor, options, internalOptions);
+		}
+		const parent = (options as (IEditorOptions & { harnessNavigationPermit?: HarnessChatNavigationPermit }) | undefined)?.harnessNavigationPermit;
+		return this.instantiationService.invokeFunction(accessor => accessor.get(IHarnessChatNavigationService).run(resource, async permit => {
+			const guardedOptions: IEditorOptions & { harnessNavigationPermit?: HarnessChatNavigationPermit } = { ...options, harnessNavigationPermit: permit };
+			// The pane's cancellable input operation is created only inside this commit.
+			const pane = await this.doOpenEditorAfterHarnessGuard(editor, guardedOptions, internalOptions);
+			const selected = (pane as (IEditorPane & { widget?: { viewModel?: { sessionResource: URI } } }) | undefined)?.widget?.viewModel?.sessionResource;
+			if (request !== this.harnessNavigationRequest || selected?.toString() !== resource.toString()) { throw new Error('The requested conversation was not selected by the native editor.'); }
+			return pane;
+		}, parent, () => request === this.harnessNavigationRequest && !this.disposed && !editor.isDisposed()
+			&& ((editor as EditorInput & { readonly sessionResource?: URI }).sessionResource ?? editor.resource)?.toString() === resource.toString()));
+	}
+
+	private async doOpenEditorAfterHarnessGuard(editor: EditorInput, options?: IEditorOptions, internalOptions?: IInternalEditorOpenOptions): Promise<IEditorPane | undefined> {
 
 		// Guard against invalid editors. Disposed editors
 		// should never open because they emit no events
@@ -1500,7 +1522,8 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 		}
 
 		// A move to another group is an open first...
-		target.doOpenEditor(keepCopy ? editor.copy() : editor, options, internalOptions);
+		const transferOptions: IEditorOptions & { harnessPassive?: boolean } = { ...options, harnessPassive: true };
+		target.doOpenEditor(keepCopy ? editor.copy() : editor, transferOptions, internalOptions);
 
 		// ...and a close afterwards (unless we copy)
 		if (!keepCopy) {
@@ -1662,7 +1685,8 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 				preserveWindowOrder: true
 			};
 
-			this.doOpenEditor(nextActiveEditor, options, internalEditorOpenOptions);
+			const fallbackOptions: IEditorOptions & { harnessPassive?: boolean } = { ...options, harnessPassive: true };
+			this.doOpenEditor(nextActiveEditor, fallbackOptions, internalEditorOpenOptions);
 		}
 
 		// Otherwise we are empty, so clear from editor control and send event
@@ -2101,6 +2125,8 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 
 			// Open replacement as active editor
 			const openEditorResult = this.doOpenEditor(activeReplacement.replacement, activeReplacement.options);
+			const replacementResource = (activeReplacement.replacement as EditorInput & { readonly sessionResource?: URI }).sessionResource ?? activeReplacement.replacement.resource;
+			if (replacementResource?.scheme === 'supercode') { await openEditorResult; }
 
 			// Close replaced active editor unless they match
 			if (!activeReplacement.editor.matches(activeReplacement.replacement)) {
