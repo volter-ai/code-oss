@@ -24,7 +24,7 @@ import type { FetchAutomationRunsParams, FetchAutomationRunsResult, ListAutomati
 import type { ActionEnvelope, ClientAutomationAction, ClientAutomationRunAction, INotification, IRootConfigChangedAction, SessionAction, ChatAction, TerminalAction, ClientAnnotationsAction, ClientChangesetAction } from './state/sessionActions.js';
 import type { ContentEncoding, ResourceCopyParams, ResourceCopyResult, ResourceDeleteParams, ResourceDeleteResult, ResourceListResult, ResourceMkdirParams, ResourceMkdirResult, ResourceMoveParams, ResourceMoveResult, ResourceReadResult, ResourceResolveParams, ResourceResolveResult, ResourceWatchState, ResourceWriteParams, ResourceWriteResult, CreateResourceWatchParams, CreateResourceWatchResult, IStateSnapshot } from './state/sessionProtocol.js';
 import { ComponentToState, StateComponents, type RootState } from './state/sessionState.js';
-import { type AgentProvider, CLAUDE_AGENT_PROVIDER_ID, CODEX_AGENT_PROVIDER_ID, type AuthenticateParams, type AuthenticateResult, type IAgentCreateChatRequestOptions, type IAgentCreateSessionConfig, type IAgentSessionMetadata, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IMcpNotification, type IAgentHostNetworkEndpoint, type IAgentHostManagedSettingsSnapshot } from './agent.js';
+import { type AgentProvider, CLAUDE_AGENT_PROVIDER_ID, CODEX_AGENT_PROVIDER_ID, COPILOT_AGENT_PROVIDER_ID, type AuthenticateParams, type AuthenticateResult, type IAgentCreateChatRequestOptions, type IAgentCreateSessionConfig, type IAgentSessionMetadata, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IMcpNotification, type IAgentHostNetworkEndpoint, type IAgentHostManagedSettingsSnapshot } from './agent.js';
 
 // ---- Provider-model re-exports (compatibility) ------------------------------
 // New provider code imports these from agent.ts.
@@ -42,7 +42,7 @@ export type {
 	IAgentHostNetworkEndpoint, IAgentHostManagedSettingsSnapshot,
 } from './agent.js';
 export {
-	AgentSession, CLAUDE_AGENT_PROVIDER_ID, CODEX_AGENT_PROVIDER_ID, GITHUB_COPILOT_PROTECTED_RESOURCE,
+	AgentSession, CLAUDE_AGENT_PROVIDER_ID, CODEX_AGENT_PROVIDER_ID, COPILOT_AGENT_PROVIDER_ID, GITHUB_COPILOT_PROTECTED_RESOURCE,
 	GITHUB_REPO_PROTECTED_RESOURCE, protectedResourcesRequireGitHubCopilotSignIn, resolveAgentChatContext,
 	resolveAgentChatOrigin, resolveSubagentChatParent, resolveAgentHostCustomizations, subagentChatTitle,
 	SubagentChatSignal,
@@ -183,6 +183,13 @@ export const AgentHostAllowSignedOutWhenUsableSettingId = 'chat.agentHost.allowS
 export const AgentHostClaudeAgentEnabledSettingId = 'chat.agentHost.claudeAgent.enabled';
 
 /**
+ * Configuration key controlling whether Chat offers the agent host's Copilot
+ * provider. When `false`, its session type and its sessions are not surfaced;
+ * the agent host still registers the provider. Defaults to `true`.
+ */
+export const AgentHostCopilotAgentEnabledSettingId = 'chat.agentHost.copilotAgent.enabled';
+
+/**
  * Configuration key controlling whether the Codex provider is registered in
  * the agent host process. When `false`, the agent host skips registering the
  * Codex provider regardless of SDK availability. The setting defaults to
@@ -300,6 +307,7 @@ export const CodexPreferAgentHostEditorSettingId = 'chat.editor.codex.preferAgen
 
 export function affectsAgentHostProviderPreference(event: IConfigurationChangeEvent, isSessionsWindow: boolean): boolean {
 	return event.affectsConfiguration(AgentHostClaudeAgentEnabledSettingId)
+		|| event.affectsConfiguration(AgentHostCopilotAgentEnabledSettingId)
 		|| event.affectsConfiguration(isSessionsWindow ? AgentHostCodexAgentEnabledSettingId : CodexPreferAgentHostEditorSettingId);
 }
 
@@ -309,6 +317,8 @@ export function shouldSurfaceLocalAgentHostProvider(provider: AgentProvider, con
 			return configurationService.getValue<boolean>(AgentHostClaudeAgentEnabledSettingId) !== false;
 		case CODEX_AGENT_PROVIDER_ID:
 			return configurationService.getValue<boolean>(isSessionsWindow ? AgentHostCodexAgentEnabledSettingId : CodexPreferAgentHostEditorSettingId) === true;
+		case COPILOT_AGENT_PROVIDER_ID:
+			return configurationService.getValue<boolean>(AgentHostCopilotAgentEnabledSettingId) !== false;
 		default:
 			return true;
 	}
