@@ -15,7 +15,7 @@ import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { isCancellationError } from '../../../../../base/common/errors.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { IAgentHostEnablementService } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
-import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
+import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
@@ -38,17 +38,6 @@ import { IChatProgressResponseContent } from '../../common/model/chatModel.js';
 import { isUntitledChatSession } from '../../common/model/chatUri.js';
 import { isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import './media/panel-states.css';
-
-// The native permissions picker supports provider-defined permission groups,
-// but this Code-OSS pin only exposes its menu for built-in session types.
-// Contribute the existing action for our session; the workbench owns its UI.
-MenuRegistry.appendMenuItem(MenuId.ChatInputSecondary, {
-	command: { id: 'workbench.action.chat.openPermissionPicker', title: localize('runtimePermissions', 'Set Permissions') },
-	// Keep the effective permission visible before optional provider pickers:
-	// the native secondary toolbar always retains its first action on overflow.
-	group: 'navigation', order: -1,
-	when: ContextKeyExpr.equals('chatSessionType', 'supercode'),
-});
 
 // Native Send requires valid session options. Before an agent/model is chosen,
 // that precondition prevents Enter from reaching the provider at all. Explain
