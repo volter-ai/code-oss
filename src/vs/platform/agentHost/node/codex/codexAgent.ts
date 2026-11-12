@@ -2504,7 +2504,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			// Launch overrides can contain user-supplied arguments and telemetry
 			// exporter headers. Keep them out of the persistent agent-host log.
 			this._logService.info(`[Codex] spawning app-server from ${binaryPath}`);
-			child = spawn(binaryPath, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+			child = spawn(binaryPath, args, { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
 			const ownedSandboxTempDirectory = sandboxTempDirectory;
 			sandboxTempDirectory = undefined;
 			child.once('close', () => {
