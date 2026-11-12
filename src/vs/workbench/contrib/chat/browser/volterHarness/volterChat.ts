@@ -9,7 +9,6 @@
 
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { KeyCode } from '../../../../../base/common/keyCodes.js';
-import { isWindows } from '../../../../../base/common/platform.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { isCancellationError } from '../../../../../base/common/errors.js';
@@ -18,14 +17,9 @@ import { IAgentHostEnablementService } from '../../../../../platform/agentHost/c
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
-import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
-import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
-import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
-import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
-import { IWorkspaceTrustManagementService } from '../../../../../platform/workspace/common/workspaceTrust.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
 import { ChatViewId, ChatViewPaneTarget, IChatWidgetService, isIChatViewViewContext } from '../chat.js';
 import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
@@ -203,75 +197,6 @@ registerWorkbenchContribution2(HarnessChatFocus.ID, HarnessChatFocus, WorkbenchP
 registerAction2(class extends Action2 {
 	constructor() { super({ id: 'volter.chat.inTurnApprovalCapability', title: localize2('inTurnApprovalCapability', 'Native In-Turn Approval Capability'), f1: false }); }
 	run() { return { version: 1 }; }
-});
-
-// Read the native service, never a repository trust marker. A host may use the
-// answer only for the exact folder currently open in this trusted workbench.
-registerAction2(class extends Action2 {
-	constructor() { super({ id: 'volter.chat.workspaceTrust', title: localize2('harnessWorkspaceTrust', 'Read Chat Workspace Trust'), f1: false }); }
-	run(accessor: ServicesAccessor, workspace: unknown): boolean {
-		if (typeof workspace !== 'string' || !workspace) { return false; }
-		const expected = URI.file(workspace).path;
-		const matches = accessor.get(IWorkspaceContextService).getWorkspace().folders.some(folder =>
-			isWindows ? folder.uri.path.toLowerCase() === expected.toLowerCase() : folder.uri.path === expected);
-		return matches && accessor.get(IWorkspaceTrustManagementService).isWorkspaceTrusted();
-	}
-});
-
-// `edit` automatically trusts its folder. That is permission to open project
-// code, never consent to bypass Chat approvals. Only this dialog writes YOLO
-// consent, in PROFILE storage (WORKSPACE storage is repository-authored here).
-registerAction2(class extends Action2 {
-	private readonly pending = new Map<string, Promise<boolean>>();
-	constructor() { super({ id: 'volter.chat.confirmProjectYolo', title: localize2('confirmProjectYolo', 'Confirm Project YOLO Policy'), f1: false }); }
-	async run(accessor: ServicesAccessor, request: unknown): Promise<boolean> {
-		if (!request || typeof request !== 'object') { return false; }
-		const { workspace, settingsSha256, requestConsent } = request as Record<string, unknown>;
-		if (typeof workspace !== 'string' || !workspace || typeof settingsSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(settingsSha256)) { return false; }
-		const context = accessor.get(IWorkspaceContextService);
-		const trust = accessor.get(IWorkspaceTrustManagementService);
-		const files = accessor.get(IFileService);
-		const storage = accessor.get(IStorageService);
-		const dialogs = accessor.get(IDialogService);
-		const normalizedPath = (path: string) => isWindows ? path.toLowerCase() : path;
-		const expected = normalizedPath(URI.file(workspace).path);
-		const folder = context.getWorkspace().folders.find(candidate => normalizedPath(candidate.uri.path) === expected);
-		if (!folder) { return false; }
-		const folderIdentity = folder.uri.toString();
-		const isCurrent = () => trust.isWorkspaceTrusted() && context.getWorkspace().folders.some(candidate => candidate.uri.toString() === folderIdentity);
-		const settingsFile = URI.joinPath(folder.uri, '.vscode', 'settings.json');
-		const matchesSettings = async () => {
-			try {
-				const contents = await files.readFile(settingsFile);
-				const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(contents.value.buffer));
-				return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('') === settingsSha256;
-			} catch { return false; }
-		};
-		if (!isCurrent() || !await matchesSettings() || !isCurrent()) { return false; }
-		const key = `volter.chat.projectYolo.v1:${JSON.stringify([folder.uri.scheme, folder.uri.authority, expected])}`;
-		if (storage.get(key, StorageScope.PROFILE) === settingsSha256) { return true; }
-		if (requestConsent !== true) { return false; }
-		const pendingKey = `${key}:${settingsSha256}`;
-		const existing = this.pending.get(pendingKey);
-		if (existing) { return existing; }
-		const confirmation = (async () => {
-			try {
-				const { confirmed } = await dialogs.confirm({
-					type: 'warning',
-					message: localize('projectYoloQuestion', 'Enable YOLO for this project?'),
-					detail: localize('projectYoloDetail', 'The settings in {0} request YOLO. Claude Code and Codex will run without approval prompts, and Codex will run without its sandbox. This choice applies only to this project and these settings. Changing the settings asks again.', workspace),
-					primaryButton: localize('projectYoloEnable', 'Enable YOLO'),
-					cancelButton: localize('projectYoloKeepApprovals', 'Keep Approvals'),
-				});
-				if (!confirmed || !isCurrent() || !await matchesSettings() || !isCurrent()) { return false; }
-				storage.store(key, settingsSha256, StorageScope.PROFILE, StorageTarget.MACHINE);
-				return true;
-			} catch { return false; }
-		})();
-		this.pending.set(pendingKey, confirmation);
-		try { return await confirmation; }
-		finally { this.pending.delete(pendingKey); }
-	}
 });
 
 // Read-only diagnostics for the product's native Chat/runtime boundary.
