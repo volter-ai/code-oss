@@ -1099,6 +1099,22 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				inputEditorBackground: locationBasedColors.background,
 				resultEditorBackground: editorBackground,
 			}));
+		// Follow the widget's swap from an untitled session to the real session it
+		// materialized into on the first send (as `ChatEditorInput.updateModel` does),
+		// so the view holds and restores the real session rather than the untitled one.
+		this._register(this._widget.onDidChangeViewModel(({ previousSessionResource, currentSessionResource }) => {
+			if (!previousSessionResource || !currentSessionResource || !isEqual(this.chatSessionsService.getMaterializedSessionResource(previousSessionResource), currentSessionResource)) {
+				return;
+			}
+			if (!isEqual(this.modelRef.value?.object.sessionResource, currentSessionResource)) {
+				const ref = this.chatService.acquireExistingSession(currentSessionResource, 'ChatViewPane#onDidChangeViewModel');
+				if (ref) {
+					this.modelRef.value = ref;
+				}
+			}
+			this.viewState.sessionResource = currentSessionResource;
+			this.memento.saveMemento();
+		}));
 		this._widget.render(chatControlsContainer, parent);
 		this._register(scopedInstantiationService.createInstance(AgentHostSessionInputPills, this._widget, 'auto'));
 
