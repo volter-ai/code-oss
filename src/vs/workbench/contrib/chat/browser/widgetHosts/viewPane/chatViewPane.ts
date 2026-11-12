@@ -1106,7 +1106,11 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			if (!previousSessionResource || !currentSessionResource || !isEqual(this.chatSessionsService.getMaterializedSessionResource(previousSessionResource), currentSessionResource)) {
 				return;
 			}
-			if (!isEqual(this.modelRef.value?.object.sessionResource, currentSessionResource)) {
+			// (the reference moves only from the session the widget left, or into an empty view: a view
+			// holding another session holds the current one already, or a `showModel` load in flight,
+			// whose reference is that load's)
+			const held = this.modelRef.value?.object.sessionResource;
+			if (!held || isEqual(held, previousSessionResource)) {
 				const ref = this.chatService.acquireExistingSession(currentSessionResource, 'ChatViewPane#onDidChangeViewModel');
 				if (ref) {
 					this.modelRef.value = ref;

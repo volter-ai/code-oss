@@ -98,10 +98,10 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `src/vs/workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.ts` listens to the widget's
   `onDidChangeViewModel`. When the new resource is the one the previous untitled session materialized into on the
   first send (`IChatSessionsService.getMaterializedSessionResource`), the view moves its model reference to it
-  (`acquireExistingSession`) and saves it as its persisted session, as `ChatEditorInput.updateModel` does for the chat
-  editor. Before, the widget bound the real session itself (`ChatWidget`, after `sendRequest`), outside `showModel`,
-  so the view kept the untitled session and a reload restored an empty chat (Cyclotron F28). Upstream's view has the
-  same gap; the change is meant to go upstream.
+  (`acquireExistingSession`), only when the view holds the session the widget left or none, and saves it as its
+  persisted session, as `ChatEditorInput.updateModel` does for the chat editor. Before, the widget bound the real
+  session itself (`ChatWidget`, after `sendRequest`), outside `showModel`, so the view kept the untitled session and a
+  reload restored an empty chat (Cyclotron F28). Upstream's view has the same gap; the change is meant to go upstream.
 - **Chat's rendered transcript can be read.** `volter.chat.transcript` (`volterHarness/volterChat.ts`) returns the
   focused (or named) conversation's items from `ChatViewModel.getItems()`, the list `ChatListRenderer` renders: each
   request attributed to the person, or to the system when `isSystemInitiated` (shown as its `systemInitiatedLabel`);
