@@ -15,14 +15,17 @@ import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { isCancellationError } from '../../../../../base/common/errors.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { IAgentHostEnablementService } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
+import { AgentHostAllowSignedOutWhenUsableSettingId, AgentHostCopilotAgentEnabledSettingId } from '../../../../../platform/agentHost/common/agentService.js';
 import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../../platform/configuration/common/configurationRegistry.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
+import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IWorkspaceTrustManagementService } from '../../../../../platform/workspace/common/workspaceTrust.js';
@@ -38,6 +41,16 @@ import { IChatProgressResponseContent } from '../../common/model/chatModel.js';
 import { isUntitledChatSession } from '../../common/model/chatUri.js';
 import { isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import './media/panel-states.css';
+
+// Code-OSS's agent host runs the person's own Codex and Claude Code, on their own
+// sign-in (ChatGPT, Anthropic), with no GitHub account. Its Copilot agent needs one,
+// and this product offers no GitHub Copilot, so it is not offered.
+Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerDefaultConfigurations([{
+	overrides: {
+		[AgentHostAllowSignedOutWhenUsableSettingId]: true,
+		[AgentHostCopilotAgentEnabledSettingId]: false,
+	},
+}]);
 
 // The native permissions picker supports provider-defined permission groups,
 // but this Code-OSS pin only exposes its menu for built-in session types.

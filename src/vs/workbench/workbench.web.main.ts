@@ -190,5 +190,3 @@ import './contrib/processExplorer/browser/processExplorer.web.contribution.js';
 import './contrib/browserView/browser/browserView.contribution.js';
 
 //#endregion
-
-import './contrib/chat/browser/volterHarness/volterChat.services.js';

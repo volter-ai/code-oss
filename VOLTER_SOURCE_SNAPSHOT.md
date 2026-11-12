@@ -101,6 +101,19 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   and `IChatToolInvocation.executionConfirmedOrDenied`. It returns the last 20 items unless asked for `last`, each text
   cut at 2000 characters with its `textLength`. A rebase keeps those view model and part types, or redoes it against
   their successors.
+- **The agent host can hide its Copilot agent** (offered upstream). `chat.agentHost.copilotAgent.enabled`
+  (`AgentHostCopilotAgentEnabledSettingId` and the `copilotcli` case of `shouldSurfaceLocalAgentHostProvider` in
+  `src/vs/platform/agentHost/common/agentService.ts`, `COPILOT_AGENT_PROVIDER_ID` in `common/agent.ts`, the setting in
+  `src/vs/workbench/contrib/chat/browser/chat.shared.contribution.ts`).
+- **Codex's dynamic tool results keep their images** (offered upstream). `dynamicToolResponseFromResult` in
+  `src/vs/platform/agentHost/node/codex/codexAgent.ts` sends an embedded `image/*` result as an `inputImage`.
+- **Codex's app-server spawns with `windowsHide`** (offered upstream). `_startRawConnection` in
+  `src/vs/platform/agentHost/node/codex/codexAgent.ts`.
+- **Cyclotron's Chat runs on Code-OSS's own agent host.** The web workbench's agent host stands as upstream has it
+  (`WebAgentHostEnablementService`: on with a remote authority and AI features on); the override that turned it off
+  (`volterHarness/volterChat.services.ts`, imported from `workbench.web.main.ts`) is gone. `volterHarness/volterChat.ts`
+  registers two defaults: `chat.agentHost.allowSignedOutWhenUsable` on, so Codex and Claude run on the person's own
+  sign-in, and `chat.agentHost.copilotAgent.enabled` off, since the product offers no GitHub Copilot.
 
 ## Patches moved from the editor overlay
 
