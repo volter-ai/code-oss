@@ -67,7 +67,8 @@ import { AgentSessionsViewerOrientation, AgentSessionsViewerPosition } from '../
 import { IProgressService } from '../../../../../../platform/progress/common/progress.js';
 import { CHAT_WIDGET_VIEW_STATE_CACHE_LIMIT, ChatViewId, IChatWidgetService, IChatWidgetViewState, setModelPreservingInputTypedWhileLoading } from '../../chat.js';
 import { IActivityService, ProgressBadge } from '../../../../../services/activity/common/activity.js';
-import { disposableTimeout } from '../../../../../../base/common/async.js';
+import { disposableTimeout, raceCancellationError } from '../../../../../../base/common/async.js';
+import { IExtensionService } from '../../../../../services/extensions/common/extensions.js';
 import { AgentSessionsFilter, AgentSessionsGrouping } from '../../agentSessions/agentSessionsFilter.js';
 import { IAgentSessionsService } from '../../agentSessions/agentSessionsService.js';
 import { IAgentHostEnablementService } from '../../../../../../platform/agentHost/common/agentHostEnablementService.js';
@@ -178,6 +179,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IAgentHostEnablementService private readonly agentHostEnablementService: IAgentHostEnablementService,
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
+		@IExtensionService private readonly extensionService: IExtensionService,
 	) {
 		super(options, keybindingService2, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 		this.element.classList.add('chat-viewpane-container');
@@ -1273,6 +1275,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	 * reference for it instead of the built-in local provider.
 	 */
 	private async acquireDefaultNewSession(token: CancellationToken, localFallbackSelectionReason?: SessionTypeSelectionReason): Promise<IChatSessionAcquisitionResult> {
+		await this.whenSessionTypesRegistered(token);
 		const workspace = this.workspaceContextService.getWorkspace();
 		const defaultTypeAndReason = getDefaultNewChatSessionTypeAndReasonFromServices(this.configurationService, this.chatSessionsService, this.storageService, workspace, this.agentHostEnablementService.enabled.get(), undefined, this.agentHostEnablementService.managedSandboxEnforced.get());
 		if (defaultTypeAndReason.sessionType === localChatSessionType) {
@@ -1314,7 +1317,14 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			};
 		}
 
-		if (this.shouldSkipRestoredLocalSession(sessionResource, modelRef.object)) {
+		let skip: boolean;
+		try {
+			skip = await this.shouldSkipRestoredLocalSession(sessionResource, modelRef.object, token);
+		} catch (error) {
+			modelRef.dispose();
+			throw error;
+		}
+		if (skip) {
 			modelRef.dispose();
 			return { modelRef: undefined };
 		}
@@ -1322,12 +1332,26 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		return { modelRef };
 	}
 
-	private shouldSkipRestoredLocalSession(sessionResource: URI, model: IChatModel): boolean {
+	private async shouldSkipRestoredLocalSession(sessionResource: URI, model: IChatModel, token: CancellationToken): Promise<boolean> {
+		if (getChatSessionType(sessionResource) !== localChatSessionType || model.hasRequests) {
+			return false;
+		}
+		await this.whenSessionTypesRegistered(token);
 		const workspace = this.workspaceContextService.getWorkspace();
 		const defaultType = getDefaultNewChatSessionType(this.configurationService, this.chatSessionsService, this.storageService, workspace, this.agentHostEnablementService.enabled.get(), undefined, this.agentHostEnablementService.managedSandboxEnforced.get());
-		return defaultType !== localChatSessionType
-			&& getChatSessionType(sessionResource) === localChatSessionType
-			&& !model.hasRequests;
+		return defaultType !== localChatSessionType;
+	}
+
+	/**
+	 * The default new session type is read from what installed extensions
+	 * register: their contributed session types (`chatSessions`) and their
+	 * `configurationDefaults` (such as `chat.editor.localAgent.enabled`). The
+	 * view renders before they are registered, so choose it once they are, as
+	 * resolving a contributed session waits for them
+	 * (`IChatSessionsService.canResolveChatSession`).
+	 */
+	private whenSessionTypesRegistered(token: CancellationToken): Promise<void> {
+		return raceCancellationError(this.extensionService.whenInstalledExtensionsRegistered().then(() => undefined), token);
 	}
 
 	private async showModel(token: CancellationToken, modelRef?: IChatModelReference | undefined, startNewSession = true, ignoreTransferredSession = false, inputBeforeLoad?: string, localFallbackSelectionReason?: SessionTypeSelectionReason, retainOutgoingModel = false): Promise<IChatModel | undefined> {

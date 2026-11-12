@@ -77,6 +77,15 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `extHostTypes.ts` and `extHostTypeConverters.ts` carry it, `extHostChatAgents2.ts` `push` checks the proposal,
   `chatModel.ts` replaces the response's open confirmation with equal `data` by a used copy, and
   `chatConfirmationContentPart.ts` re-renders a confirmation that became used.
+- **The Chat view chooses a new chat's session type once the installed extensions are registered.**
+  `ChatViewPane` in `src/vs/workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.ts` awaits
+  `IExtensionService.whenInstalledExtensionsRegistered()` (`whenSessionTypesRegistered`) in
+  `acquireDefaultNewSession`, and in `shouldSkipRestoredLocalSession` for an empty Local session. The default type
+  (`getDefaultNewChatSessionTypeAndReasonFromServices`) reads the contributed session types and the extensions'
+  `configurationDefaults` (`chat.editor.localAgent.enabled`). The view renders and calls `applyModel` before a
+  remote extension host's extensions are registered, so a fresh start chose Local before Supercode's `chatSessions`
+  type and `@volter/chat`'s default existed. Resolving a contributed session already waits for the same thing
+  (`ChatSessionsService.canResolveChatSession`). Upstream's main has the same synchronous choice.
 - **Chat's rendered transcript can be read.** `volter.chat.transcript` (`volterHarness/volterChat.ts`) returns the
   focused (or named) conversation's items from `ChatViewModel.getItems()`, the list `ChatListRenderer` renders: each
   request attributed to the person, or to the system when `isSystemInitiated` (shown as its `systemInitiatedLabel`);
