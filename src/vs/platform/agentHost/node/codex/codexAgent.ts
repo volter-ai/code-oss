@@ -926,14 +926,17 @@ export const CodexSdkPackage: IAgentSdkPackage = {
 /**
  * Convert a workbench {@link ToolCallResult} into the codex
  * {@link DynamicToolCallResponse} returned for an `item/tool/call` request.
- * Text content maps to `inputText`; when there is no text content the
- * tool's past-tense summary is used so codex never receives an empty body.
+ * Text content maps to `inputText` and embedded `image/*` content to
+ * `inputImage` (as a data URL); when there is neither, the tool's past-tense
+ * summary is used so codex never receives an empty body.
  */
 function dynamicToolResponseFromResult(result: ToolCallResult): DynamicToolCallResponse {
 	const contentItems: DynamicToolCallOutputContentItem[] = [];
 	for (const c of result.content ?? []) {
 		if (c.type === ToolResultContentType.Text) {
 			contentItems.push({ type: 'inputText', text: c.text });
+		} else if (c.type === ToolResultContentType.EmbeddedResource && c.contentType.startsWith('image/')) {
+			contentItems.push({ type: 'inputImage', imageUrl: `data:${c.contentType};base64,${c.data}` });
 		}
 	}
 	if (contentItems.length === 0) {
