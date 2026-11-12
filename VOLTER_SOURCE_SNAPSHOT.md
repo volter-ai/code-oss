@@ -77,23 +77,6 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `extHostTypes.ts` and `extHostTypeConverters.ts` carry it, `extHostChatAgents2.ts` `push` checks the proposal,
   `chatModel.ts` replaces the response's open confirmation with equal `data` by a used copy, and
   `chatConfirmationContentPart.ts` re-renders a confirmation that became used.
-
-- **A conversation can become the Chat view's own without opening the view.**
-  `ChatViewPane.selectSessionWithoutRevealing` in
-  `src/vs/workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.ts`: a created view loads it with
-  `loadSession` (no `openView`); a view not yet created gets it in its persisted state
-  (`memento/interactive-session-view-<provider>`, WORKSPACE), which it restores when the person opens Chat
-  (`getTransferredOrPersistedSessionInfo`); `ChatViewPane.shownSessionResource` reads which conversation that is.
-  `chatViewPaneState` drops the previous window's conversation on a fresh
-  start (`chat.restoreLastPanelSession` off) once per window instead of at every view construction, so a selection made
-  before the view exists survives its creation. `volter.chat.revealReadySession` (`volterHarness/volterChat.ts`) uses
-  it while the Chat view is hidden: a conversation becoming ready leaves the person's layout (a collapsed auxiliary
-  bar) as restored, and its focus guard counts the hidden view's conversation as the focus that activation reported;
-  `volter.chat.openSession` still reveals. A blank chat guards nothing, and that includes the default agent's untitled
-  session a reload restores (`supercode:/untitled-…`, `isUntitledChatSession` in `chat/common/model/chatUri.ts`).
-  Whether the earlier guard ever refused a restored conversation is not established: on Cyclotron 0.5.218, 4 empty
-  reopens came up in tabs that stayed hidden, the first, in a visible tab, was not read, and reopens in a visible tab
-  restored the conversation (a New Chat, then close and reopen: 5 of 5 on the earlier workbench and on this one).
 - **Chat's rendered transcript can be read.** `volter.chat.transcript` (`volterHarness/volterChat.ts`) returns the
   focused (or named) conversation's items from `ChatViewModel.getItems()`, the list `ChatListRenderer` renders: each
   request attributed to the person, or to the system when `isSystemInitiated` (shown as its `systemInitiatedLabel`);
@@ -113,7 +96,6 @@ overlay can drop it.
 
 | Commit | Overlay function | Files |
 |---|---|---|
-| `a0d85b8ca9ad` | `patchNativePermissionPicker` | `src/vs/workbench/contrib/chat/browser/widget/input/chatInputPart.ts`, `src/vs/workbench/contrib/chat/browser/widget/input/permissionPickerActionItem.ts` |
 | `aef57c2e0968` | `patchHarnessMoveActions` | `src/vs/workbench/contrib/chat/browser/actions/chatMoveActions.ts` |
 | `619a7760a07c` | `patchHarnessPassiveViews` | `src/vs/workbench/contrib/chat/browser/actions/chatElicitationActions.ts`, `src/vs/workbench/contrib/chat/browser/actions/chatExecuteActions.ts`, `src/vs/workbench/contrib/chat/browser/actions/chatToolActions.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatContentParts/chatCommandContentPart.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatReadOnlyBanner.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatWidget.ts` |
 | `f95416c09cdc` | `patchHarnessDraftAgentMention` | `src/vs/workbench/contrib/chat/browser/widget/input/editor/chatInputEditorContrib.ts` |

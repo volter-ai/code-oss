@@ -28,7 +28,7 @@ import { IConfigurationService } from '../../../../../../platform/configuration/
 import { IContextKey, IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IContextMenuService } from '../../../../../../platform/contextview/browser/contextView.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
-import { IInstantiationService, ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ServiceCollection } from '../../../../../../platform/instantiation/common/serviceCollection.js';
 import { IKeybindingService } from '../../../../../../platform/keybinding/common/keybinding.js';
 import { ILogService } from '../../../../../../platform/log/common/log.js';
@@ -48,7 +48,6 @@ import { Memento } from '../../../../../common/memento.js';
 import { SIDE_BAR_FOREGROUND } from '../../../../../common/theme.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../../../../../common/views.js';
 import { ILifecycleService, StartupKind } from '../../../../../services/lifecycle/common/lifecycle.js';
-import { IViewsService } from '../../../../../services/views/common/viewsService.js';
 import { IChatViewTitleActionContext } from '../../../common/actions/chatActions.js';
 import { IChatAgentService } from '../../../common/participants/chatAgents.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
@@ -104,31 +103,6 @@ interface IChatViewPaneState extends Partial<IChatModelInputState> {
 interface IChatSessionAcquisitionResult {
 	modelRef: IChatModelReference | undefined;
 	localFallbackSelectionReason?: SessionTypeSelectionReason;
-}
-
-let previousWindowSessionCleared = false;
-
-/**
- * The Chat view's persisted state: the conversation it restores when it is created
- * (`getTransferredOrPersistedSessionInfo`). With `chat.restoreLastPanelSession` off, a fresh start drops the
- * conversation the previous window persisted. That happens once per window, when the window first reads the state,
- * so a conversation selected in this window before the view is created (or re-created) is kept.
- */
-function chatViewPaneState(storageService: IStorageService, lifecycleService: ILifecycleService, configurationService: IConfigurationService): { memento: Memento<IChatViewPaneState>; viewState: IChatViewPaneState } {
-	const memento = new Memento<IChatViewPaneState>(`interactive-session-view-${CHAT_PROVIDER_ID}`, storageService);
-	const viewState = memento.getMemento(StorageScope.WORKSPACE, StorageTarget.MACHINE);
-	if (!previousWindowSessionCleared) {
-		previousWindowSessionCleared = true;
-		if (
-			lifecycleService.startupKind !== StartupKind.ReloadedWindow &&
-			configurationService.getValue<boolean>(ChatConfiguration.RestoreLastPanelSession) === false
-		) {
-			// clear persisted session on fresh start
-			viewState.sessionId = undefined;
-			viewState.sessionResource = undefined;
-		}
-	}
-	return { memento, viewState };
 }
 
 type ChatViewPaneOpenedClassification = {
@@ -210,9 +184,16 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 		// View state for the ViewPane is currently global per-provider basically,
 		// but some other strictly per-model state will require a separate memento.
-		const state = chatViewPaneState(this.storageService, lifecycleService, this.configurationService);
-		this.memento = state.memento;
-		this.viewState = state.viewState;
+		this.memento = new Memento(`interactive-session-view-${CHAT_PROVIDER_ID}`, this.storageService);
+		this.viewState = this.memento.getMemento(StorageScope.WORKSPACE, StorageTarget.MACHINE);
+		if (
+			lifecycleService.startupKind !== StartupKind.ReloadedWindow &&
+			this.configurationService.getValue<boolean>(ChatConfiguration.RestoreLastPanelSession) === false
+		) {
+			// clear persisted session on fresh start
+			this.viewState.sessionId = undefined;
+			this.viewState.sessionResource = undefined;
+		}
 		this.sessionsViewerVisible = false; // will be updated from layout code
 		this.sessionsViewerSidebarWidth = Math.max(ChatViewPane.SESSIONS_SIDEBAR_MIN_WIDTH, this.viewState.sessionsSidebarWidth ?? ChatViewPane.SESSIONS_SIDEBAR_DEFAULT_WIDTH);
 
@@ -1487,45 +1468,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 		// Update the toolbar context with new sessionId
 		this.updateActions();
-	}
-
-	/**
-	 * Makes `sessionResource` the conversation the Chat view shows, without opening the view or its container: which
-	 * containers are visible is the person's layout, restored from storage. A created view loads it now through
-	 * {@link loadSession}, the load `IChatWidgetService.openSession` runs after `openView`; a view not yet created
-	 * restores it from its persisted state ({@link getTransferredOrPersistedSessionInfo}) when the person opens Chat.
-	 */
-	static async selectSessionWithoutRevealing(accessor: ServicesAccessor, sessionResource: URI, permit?: HarnessChatNavigationPermit): Promise<URI | undefined> {
-		const view = accessor.get(IViewsService).getViewWithId<ChatViewPane>(ChatViewId);
-		if (view) {
-			if (isEqual(view.widget?.viewModel?.sessionResource, sessionResource)) {
-				return sessionResource;
-			}
-			return (await view.loadSession(sessionResource, undefined, permit))?.sessionResource;
-		}
-		const { memento, viewState } = chatViewPaneState(accessor.get(IStorageService), accessor.get(ILifecycleService), accessor.get(IConfigurationService));
-		viewState.sessionId = undefined;
-		viewState.sessionResource = sessionResource;
-		memento.saveMemento();
-		return sessionResource;
-	}
-
-	/**
-	 * The conversation the Chat view shows, or, for a view not yet created, the one it restores when the person opens
-	 * Chat ({@link getTransferredOrPersistedSessionInfo}).
-	 */
-	static shownSessionResource(accessor: ServicesAccessor): URI | undefined {
-		const view = accessor.get(IViewsService).getViewWithId<ChatViewPane>(ChatViewId);
-		if (view) {
-			return view.widget?.viewModel?.sessionResource;
-		}
-		const transferred = accessor.get(IChatService).transferredSessionResource;
-		if (transferred) {
-			return transferred;
-		}
-		const { viewState } = chatViewPaneState(accessor.get(IStorageService), accessor.get(ILifecycleService), accessor.get(IConfigurationService));
-		// Persisted state read back from storage holds the URI's components.
-		return viewState.sessionResource ? URI.revive(viewState.sessionResource) : viewState.sessionId ? LocalChatSessionUri.forSession(viewState.sessionId) : undefined;
 	}
 
 	async loadSession(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason, permit?: HarnessChatNavigationPermit, openingToken?: CancellationToken): Promise<IChatModel | undefined> {
