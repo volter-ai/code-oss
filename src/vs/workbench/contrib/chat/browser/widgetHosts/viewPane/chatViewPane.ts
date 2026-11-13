@@ -1131,6 +1131,15 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			}
 		}));
 
+		// A first send in an untitled contributed session materializes it into a real session and the
+		// widget switches to that model without going through `showModel`: remember it as the model
+		// to restore in view state, so a reload does not bring back the empty untitled session
+		this._register(chatWidget.onDidChangeViewModel(({ previousSessionResource, currentSessionResource }) => {
+			if (previousSessionResource && currentSessionResource && isEqual(this.chatSessionsService.getMaterializedSessionResource(previousSessionResource), currentSessionResource)) {
+				this.viewState.sessionResource = currentSessionResource;
+			}
+		}));
+
 		// Track the active chat model and reveal it in the sessions control if side-by-side
 		this._register(chatWidget.onDidChangeViewModel(() => {
 			const model = chatWidget.viewModel?.model;
