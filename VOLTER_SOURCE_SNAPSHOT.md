@@ -134,3 +134,11 @@ The chat patches import Volter's harness Chat modules from
 `src/vs/workbench/contrib/chat/browser/volterHarness/` (`harnessChatSources`), in this repository.
 
 `patchSourcesProduct` stays in the overlay: it writes per-target build configuration.
+
+`extensions/copilot` and `extensions/vscode-api-tests` are deleted in this fork, which keeps `build/npm/dirs.ts`,
+`build/gulpfile.extensions.ts` and the REH's Copilot ripgrep shim from reaching for them, and the root `compile` and
+`watch` scripts from running Copilot's. The server declares no Copilot runtime (`@github/copilot`,
+`@github/copilot-sdk`, `@vscode/copilot-api` are gone from `remote/package.json`, and `build/gulpfile.reh.ts` fetches
+no Copilot platform package): the built-in agent host that would load them is off
+(`VolterAgentHostEnablementService`), and the renderer connects to the server's lazily started agent host only while
+it is enabled (`EditorRemoteAgentHostServiceClient`).

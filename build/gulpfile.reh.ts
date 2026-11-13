@@ -31,7 +31,7 @@ import log from 'fancy-log';
 import buildfile from './buildfile.ts';
 import { fetchUrls } from './lib/fetch.ts';
 import { downloadFeedPackage } from './lib/azureFeed.ts';
-import { ensureCopilotPlatformPackage, getCopilotExcludeFilter, getCopilotRuntimePrebuildFiles, getCopilotTgrepExcludeFilter, getMxcExcludeFilter, getRipgrepExcludeFilter, prepareBuiltInCopilotRipgrepShim } from './lib/copilot.ts';
+import { getMxcExcludeFilter, getRipgrepExcludeFilter, prepareBuiltInCopilotRipgrepShim } from './lib/copilot.ts';
 import { readAgentSdkResults } from './agent-sdk/common.ts';
 
 
@@ -442,11 +442,8 @@ function packageTask(type: string, platform: string, arch: string, sourceFolderN
 			.pipe(filter(['**', '!**/package-lock.json', '!**/*.{js,css}.map']))
 			.pipe(util.cleanNodeModules(path.join(import.meta.dirname, '.moduleignore')))
 			.pipe(util.cleanNodeModules(path.join(import.meta.dirname, `.moduleignore.${process.platform}`)));
-		ensureCopilotPlatformPackage(platform, arch, 'remote/node_modules');
-		const copilotRuntimePrebuilds = gulp.src(getCopilotRuntimePrebuildFiles(platform, arch, 'remote/node_modules'), { base: 'remote', dot: true, allowEmpty: true });
-		const deps = es.merge(cleanedDeps, copilotRuntimePrebuilds)
-			.pipe(filter(getCopilotExcludeFilter(platform, arch)))
-			.pipe(filter(getCopilotTgrepExcludeFilter(platform, arch)))
+		// VOLTER: the server ships no Copilot runtime (VOLTER_SOURCE_SNAPSHOT.md).
+		const deps = cleanedDeps
 			.pipe(filter(getRipgrepExcludeFilter(platform, arch)))
 			.pipe(filter(getMxcExcludeFilter(arch)))
 			.pipe(jsFilter)
@@ -610,8 +607,7 @@ function prepareCopilotRipgrepShimTaskREH(platform: string, arch: string, destin
 		const nodeModulesDir = path.join(outputDir, 'node_modules');
 
 		const builtInCopilotExtensionDir = path.join(outputDir, 'extensions', 'copilot');
-		// VOLTER (overlaid tier — scripts/workbench/overlay.mjs): extensions/copilot is not in
-		// this release, so there is no built-in Copilot SDK to shim. VOLTER_NO_BUILTIN_COPILOT.
+		// VOLTER: 'extensions/copilot' is deleted in this fork, so there is no built-in Copilot SDK to shim.
 		if (!fs.existsSync(builtInCopilotExtensionDir)) { return; }
 		prepareBuiltInCopilotRipgrepShim(platform, arch, builtInCopilotExtensionDir, nodeModulesDir);
 	};
