@@ -125,6 +125,9 @@ export class ExtensionManagementChannel<TContext = RemoteAgentConnectionContext 
 			case 'installFromLocation': {
 				return this.service.installFromLocation(transformIncomingURI(args[0], uriTransformer), transformIncomingURI(args[1], uriTransformer));
 			}
+			case 'installFromLocations': {
+				return this.service.installFromLocations((<UriComponents[]>args[0]).map(location => transformIncomingURI(location, uriTransformer)), transformIncomingURI(args[1], uriTransformer));
+			}
 			case 'installExtensionsFromProfile': {
 				return this.service.installExtensionsFromProfile(args[0], transformIncomingURI(args[1], uriTransformer), transformIncomingURI(args[2], uriTransformer));
 			}
@@ -266,6 +269,11 @@ export class ExtensionManagementChannelClient extends CommontExtensionManagement
 
 	installFromLocation(location: URI, profileLocation: URI): Promise<ILocalExtension> {
 		return Promise.resolve(this.channel.call<ILocalExtension>('installFromLocation', [location, profileLocation])).then(local => transformIncomingExtension(local, null));
+	}
+
+	async installFromLocations(locations: URI[], profileLocation: URI): Promise<ILocalExtension[]> {
+		const result = await this.channel.call<ILocalExtension[]>('installFromLocations', [locations, profileLocation]);
+		return result.map(local => transformIncomingExtension(local, null));
 	}
 
 	async installExtensionsFromProfile(extensions: IExtensionIdentifier[], fromProfileLocation: URI, toProfileLocation: URI): Promise<ILocalExtension[]> {

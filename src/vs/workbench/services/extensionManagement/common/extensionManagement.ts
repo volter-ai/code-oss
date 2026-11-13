@@ -86,6 +86,7 @@ export interface IWorkbenchExtensionManagementService extends IProfileAwareExten
 	installVSIX(location: URI, manifest: IExtensionManifest, installOptions?: InstallOptions): Promise<ILocalExtension>;
 	installFromGallery(gallery: IGalleryExtension, installOptions?: InstallOptions, servers?: IExtensionManagementServer[]): Promise<ILocalExtension>;
 	installFromLocation(location: URI): Promise<ILocalExtension>;
+	installFromLocations(locations: URI[]): Promise<ILocalExtension[]>;
 	installResourceExtension(extension: IResourceExtension, installOptions: InstallOptions): Promise<ILocalExtension>;
 
 	updateFromGallery(gallery: IGalleryExtension, extension: ILocalExtension, installOptions?: InstallOptions): Promise<ILocalExtension>;

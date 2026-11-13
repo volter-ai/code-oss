@@ -2035,6 +2035,9 @@ export class TestWorkbenchExtensionManagementService implements IWorkbenchExtens
 	installFromLocation(location: URI): Promise<ILocalExtension> {
 		throw new Error('Method not implemented.');
 	}
+	installFromLocations(locations: URI[]): Promise<ILocalExtension[]> {
+		throw new Error('Method not implemented.');
+	}
 	installGalleryExtensions(extensions: InstallExtensionInfo[]): Promise<InstallExtensionResult[]> {
 		throw new Error('Method not implemented.');
 	}
