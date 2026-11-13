@@ -184,6 +184,22 @@ export class ExtensionManagementService extends AbstractExtensionManagementServi
 		return local;
 	}
 
+	async installFromLocations(locations: URI[], profileLocation: URI): Promise<ILocalExtension[]> {
+		this.logService.trace('ExtensionManagementService#installFromLocations', locations.map(location => location.toString()));
+		const extensions = await Promise.all(locations.map(async location => {
+			const local = await this.extensionsScanner.scanUserExtensionAtLocation(location);
+			if (!local || !local.manifest.name || !local.manifest.version) {
+				throw new Error(`Cannot find a valid extension from the location ${location.toString()}`);
+			}
+			return local;
+		}));
+		if (extensions.length) {
+			await this.addExtensionsToProfile(extensions.map((local): [ILocalExtension, Metadata] => [local, { source: 'resource' }]), profileLocation);
+			this.logService.info('Successfully installed extensions', extensions.map(local => local.identifier.id), profileLocation.toString());
+		}
+		return extensions;
+	}
+
 	async installExtensionsFromProfile(extensions: IExtensionIdentifier[], fromProfileLocation: URI, toProfileLocation: URI): Promise<ILocalExtension[]> {
 		this.logService.trace('ExtensionManagementService#installExtensionsFromProfile', extensions, fromProfileLocation.toString(), toProfileLocation.toString());
 		const extensionsToInstall = (await this.getInstalled(ExtensionType.User, fromProfileLocation)).filter(e => extensions.some(id => areSameExtensions(id, e.identifier)));

@@ -119,6 +119,29 @@ export class WebExtensionManagementService extends AbstractExtensionManagementSe
 		return this.install(location, { profileLocation });
 	}
 
+	async installFromLocations(locations: URI[], profileLocation: URI): Promise<ILocalExtension[]> {
+		this.logService.trace('ExtensionManagementService#installFromLocations', locations.map(location => location.toString()));
+		const extensions = await Promise.all(locations.map(async location => {
+			const manifest = await this.webExtensionsScannerService.scanExtensionManifest(location);
+			if (!manifest || !manifest.name || !manifest.version) {
+				throw new Error(`Cannot find a valid extension from the location ${location.toString()}`);
+			}
+			return { manifest, extension: location, options: { profileLocation } };
+		}));
+		const results = extensions.length ? await this.installExtensions(extensions) : [];
+		return extensions.map(({ manifest }) => {
+			const extensionId = getGalleryExtensionId(manifest.publisher, manifest.name);
+			const result = results.find(({ identifier }) => areSameExtensions(identifier, { id: extensionId }));
+			if (result?.local) {
+				return result.local;
+			}
+			if (result?.error) {
+				throw result.error;
+			}
+			throw toExtensionManagementError(new Error(`Unknown error while installing extension ${extensionId}`));
+		});
+	}
+
 	protected async deleteExtension(extension: ILocalExtension): Promise<void> {
 		// do nothing
 	}

@@ -97,6 +97,10 @@ export abstract class ProfileAwareExtensionManagementChannelClient extends BaseE
 		return super.installFromLocation(location, await this.getProfileLocation(profileLocation));
 	}
 
+	override async installFromLocations(locations: URI[], profileLocation: URI): Promise<ILocalExtension[]> {
+		return super.installFromLocations(locations, await this.getProfileLocation(profileLocation));
+	}
+
 	override async installFromGallery(extension: IGalleryExtension, installOptions?: InstallOptions): Promise<ILocalExtension> {
 		installOptions = { ...installOptions, profileLocation: await this.getProfileLocation(installOptions?.profileLocation) };
 		return super.installFromGallery(extension, installOptions);

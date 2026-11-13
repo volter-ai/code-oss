@@ -365,6 +365,30 @@ export class ExtensionManagementService extends CommontExtensionManagementServic
 		return this.extensionManagementServerService.webExtensionManagementServer.extensionManagementService.installFromLocation(location, this.userDataProfileService.currentProfile.extensionsResource);
 	}
 
+	async installFromLocations(locations: URI[]): Promise<ILocalExtension[]> {
+		// Each server installs its locations in one call, which adds them to the profile as one change
+		const locationsByServer = new Map<IExtensionManagementServer, number[]>();
+		locations.forEach((location, index) => {
+			const server = location.scheme === Schemas.file ? this.extensionManagementServerService.localExtensionManagementServer
+				: location.scheme === Schemas.vscodeRemote ? this.extensionManagementServerService.remoteExtensionManagementServer
+					: this.extensionManagementServerService.webExtensionManagementServer;
+			if (!server) {
+				throw new Error(`Extension management server to install from ${location.toString()} is not found`);
+			}
+			let indexes = locationsByServer.get(server);
+			if (!indexes) {
+				locationsByServer.set(server, indexes = []);
+			}
+			indexes.push(index);
+		});
+		const result: ILocalExtension[] = [];
+		await Promise.all([...locationsByServer].map(async ([server, indexes]) => {
+			const installed = await server.extensionManagementService.installFromLocations(indexes.map(index => locations[index]), this.userDataProfileService.currentProfile.extensionsResource);
+			installed.forEach((local, i) => result[indexes[i]] = local);
+		}));
+		return result;
+	}
+
 	protected installVSIXInServer(vsix: URI, server: IExtensionManagementServer, options: InstallOptions | undefined): Promise<ILocalExtension> {
 		return server.extensionManagementService.install(vsix, options);
 	}
