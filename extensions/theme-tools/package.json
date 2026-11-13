@@ -1,0 +1,30 @@
+{
+  "name": "theme-tools",
+  "displayName": "Maya and Substance looks for Cyclotron",
+  "description": "Colour themes in Maya's and Substance's looks, for Cyclotron.",
+  "categories": [
+    "Themes"
+  ],
+  "version": "0.0.1",
+  "publisher": "vscode",
+  "license": "MIT",
+  "engines": {
+    "vscode": "*"
+  },
+  "contributes": {
+    "themes": [
+      {
+        "id": "maya",
+        "label": "Maya",
+        "uiTheme": "vs-dark",
+        "path": "./themes/maya.json"
+      },
+      {
+        "id": "substance",
+        "label": "Substance",
+        "uiTheme": "vs-dark",
+        "path": "./themes/substance.json"
+      }
+    ]
+  }
+}
