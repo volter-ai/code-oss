@@ -18,7 +18,7 @@ import { KeyCode } from '../../../../../base/common/keyCodes.js';
 import { DisposableStore, IDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize } from '../../../../../nls.js';
-import { CommandsRegistry, ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IProgressService } from '../../../../../platform/progress/common/progress.js';
@@ -78,15 +78,11 @@ function isState(state: unknown): state is ChatSetupState {
 }
 
 /**
- * One read of the extension's setup state, answered locally by the extension (no polling,
- * no host round trip). `undefined` instead of a read when no extension registered the
- * command, because asking must never activate one. A throw, another version or another
- * shape answers `undefined`, which keeps today's Markdown welcome.
+ * One read of the bundled Chat extension's setup state, answered locally by the extension (no
+ * polling, no host round trip). A throw, another version or another shape answers `undefined`,
+ * which keeps today's Markdown welcome.
  */
-export function readChatSetupState(accessor: ServicesAccessor): Promise<ChatSetupState | undefined> | undefined {
-	if (!CommandsRegistry.getCommand(SETUP_STATE)) {
-		return undefined;
-	}
+export function readChatSetupState(accessor: ServicesAccessor): Promise<ChatSetupState | undefined> {
 	return accessor.get(ICommandService).executeCommand<unknown>(SETUP_STATE).then(state => isState(state) ? state : undefined, () => undefined);
 }
 

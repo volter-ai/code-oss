@@ -7,7 +7,7 @@ import { URI } from '../../../../../base/common/uri.js';
 import { CancellationError } from '../../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
-import { CommandsRegistry, ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
@@ -23,7 +23,6 @@ export interface IHarnessChatNavigationService {
 	readonly _serviceBrand: undefined;
 	readonly activeResource: string | undefined;
 	readonly onDidChangeActiveResource: Event<void>;
-	readonly outcome: 'idle' | 'activating' | 'committing' | 'failed';
 	assertInteractive(resource: URI | undefined): void;
 	run<T>(resource: URI, commit: (permit?: HarnessChatNavigationPermit) => Promise<T>, parent?: HarnessChatNavigationPermit, isCurrent?: () => boolean): Promise<T>;
 	syncFocus(resource: URI | undefined, isCurrent: () => boolean, materialized: boolean): Promise<void>;
@@ -37,7 +36,6 @@ class HarnessChatNavigationService extends Disposable implements IHarnessChatNav
 	private readonly changed = this._register(new Emitter<void>());
 	readonly onDidChangeActiveResource = this.changed.event;
 	get activeResource(): string | undefined { return this._activeResource; }
-	outcome: 'idle' | 'activating' | 'committing' | 'failed' = 'idle';
 
 	constructor(
 		@ICommandService private readonly commands: ICommandService,
@@ -84,29 +82,21 @@ class HarnessChatNavigationService extends Disposable implements IHarnessChatNav
 			if (!isCurrent()) { throw new CancellationError(); }
 			// This command awaits the frontend/host's live busy and approval guard.
 			// Never use frontend.openSession: it reveals through this native boundary.
-			this.outcome = 'activating';
-			try { await this.commands.executeCommand('supercode.frontend.activateSession', key); }
-			catch (error) { this.outcome = 'idle'; throw error; }
+			await this.commands.executeCommand('supercode.frontend.activateSession', key);
 			// Activation succeeded. Expose its actual identity even if native commit fails.
-			this.outcome = 'committing';
 			this.authorize(key);
 			const permit = this.active = { resource: key };
 			try {
 				if (!isCurrent()) { throw new Error('Conversation activated, but its native navigation target became unavailable.'); }
 				await this.focus(resource);
 				if (!isCurrent()) { throw new Error('Conversation focused, but its native navigation target became unavailable.'); }
-				const result = await commit(permit);
-				this.outcome = 'idle';
-				return result;
-			} catch (error) { this.outcome = 'failed'; throw error; }
-			finally { this.active = undefined; }
+				return await commit(permit);
+			} finally { this.active = undefined; }
 		});
 	}
 
 	private async focus(resource: URI | undefined): Promise<void> {
-		if (CommandsRegistry.getCommand('supercode.frontend.focusSession')) {
-			await this.commands.executeCommand('supercode.frontend.focusSession', resource?.toString());
-		}
+		await this.commands.executeCommand('supercode.frontend.focusSession', resource?.toString());
 	}
 
 	syncFocus(resource: URI | undefined, isCurrent: () => boolean, materialized: boolean): Promise<void> {
