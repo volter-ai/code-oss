@@ -1625,12 +1625,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			const numItems = this.viewModel?.getItems().length ?? 0;
 			// The setup state draws only an empty chat, from the newest read for this conversation.
 			// Until the first read answers, the welcome it may replace stays hidden and the composer
-			// as it was, rather than flashing; with no extension to ask, nothing waits.
-			const asked = !numItems && readSetup && this.readSetupWelcome();
-			if (!numItems && readSetup && !asked) {
-				// Nothing can answer any more (say the extension host restarted): drop the last
-				// answer, so the Markdown welcome and a usable composer come back.
-				this._setupWelcome = undefined;
+			// as it was, rather than flashing.
+			const asked = !numItems && readSetup;
+			if (asked) {
+				this.readSetupWelcome();
 			}
 			const setup = numItems ? undefined : this._setupWelcome?.state;
 			const pending = asked && !this._setupWelcome;
@@ -1673,18 +1671,16 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 	}
 
-	/** Asks the chat extension for its setup state; false when no extension answers that. */
-	private readSetupWelcome(): boolean {
+	/** Asks the chat extension for its setup state. */
+	private readSetupWelcome(): void {
 		const read = ++this._setupWelcomeRead;
-		const reply = this.instantiationService.invokeFunction(readChatSetupState);
-		reply?.then(state => {
+		this.instantiationService.invokeFunction(readChatSetupState).then(state => {
 			// A newer render, or another conversation, supersedes this read.
 			if (read === this._setupWelcomeRead && !this._store.isDisposed) {
 				this._setupWelcome = { state };
 				this.renderWelcomeViewContentIfNeeded(false);
 			}
 		});
-		return !!reply;
 	}
 
 	/**

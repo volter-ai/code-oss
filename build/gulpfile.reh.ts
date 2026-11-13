@@ -20,8 +20,6 @@ import { untar } from './lib/util.ts';
 import File from 'vinyl';
 import * as fs from 'fs';
 import glob from 'glob';
-import { promisify } from 'util';
-import rceditCallback from 'rcedit';
 import { compileBuildWithManglingTask } from './gulpfile.compile.ts';
 import { cleanExtensionsBuildTask, compileNonNativeExtensionsBuildTask, compileNativeExtensionsBuildTask, compileExtensionMediaBuildTask, compileCopilotExtensionBuildTask } from './gulpfile.extensions.ts';
 import { vscodeWebResourceIncludes, createVSCodeWebFileContentMapper } from './gulpfile.vscode.web.ts';
@@ -35,7 +33,6 @@ import { ensureCopilotPlatformPackage, getCopilotExcludeFilter, getCopilotRuntim
 import { readAgentSdkResults } from './agent-sdk/common.ts';
 
 
-const rcedit = promisify(rceditCallback);
 
 const REPO_ROOT = path.dirname(import.meta.dirname);
 const commit = getVersion(REPO_ROOT);
@@ -533,77 +530,6 @@ function packageTask(type: string, platform: string, arch: string, sourceFolderN
 	};
 }
 
-function hasAuthenticodeSignature(filePath: string): Promise<boolean> {
-	return new Promise((resolve, reject) => {
-		const proc = cp.spawn('signtool.exe', ['verify', '/pa', filePath]);
-		proc.on('error', reject);
-		proc.on('exit', code => resolve(code === 0));
-	});
-}
-
-async function stripAuthenticodeSignature(filePath: string): Promise<void> {
-	// ESRP's `signtool /as` (append) fails with 0x800700C1 on PEs whose existing
-	// Authenticode signature was invalidated by rcedit. Strip cleanly first so
-	// rcedit operates on an unsigned PE.
-	if (!await hasAuthenticodeSignature(filePath)) {
-		return;
-	}
-	await new Promise<void>((resolve, reject) => {
-		const proc = cp.spawn('signtool.exe', ['remove', '/s', filePath]);
-		let out = '';
-		proc.stdout?.on('data', chunk => out += chunk.toString());
-		proc.stderr?.on('data', chunk => out += chunk.toString());
-		proc.on('error', reject);
-		proc.on('exit', code => {
-			if (code === 0) {
-				resolve();
-			} else {
-				process.stderr.write(out);
-				reject(new Error(`signtool remove /s failed for ${filePath} (exit ${code})`));
-			}
-		});
-	});
-}
-
-function patchWin32DependenciesTask(destinationFolderName: string) {
-	const cwd = path.join(BUILD_ROOT, destinationFolderName);
-
-	return async () => {
-		const deps = (await Promise.all([
-			promisify(glob)('**/*.node', { cwd }),
-			promisify(glob)('**/rg.exe', { cwd }),
-			promisify(glob)('**/tgrep.exe', { cwd }),
-			// TODO@anthonykim1 Remove once @github/copilot ships OneAuthInterop.dll with complete version information.
-			promisify(glob)('**/OneAuthInterop.dll', { cwd }),
-		])).flatMap(o => o);
-		const packageJsonContents = JSON.parse(await fs.promises.readFile(path.join(cwd, 'package.json'), 'utf8'));
-		const productContents = JSON.parse(await fs.promises.readFile(path.join(cwd, 'product.json'), 'utf8'));
-		const baseVersion = packageJsonContents.version.replace(/-.*$/, '');
-
-		const patchPromises = deps.map<Promise<unknown>>(async dep => {
-			const basename = path.basename(dep);
-			const fullPath = path.join(cwd, dep);
-
-			await stripAuthenticodeSignature(fullPath);
-			await rcedit(fullPath, {
-				'file-version': baseVersion,
-				'version-string': {
-					'CompanyName': 'Microsoft Corporation',
-					'FileDescription': productContents.nameLong,
-					'FileVersion': packageJsonContents.version,
-					'InternalName': basename,
-					'LegalCopyright': 'Copyright (C) 2026 Microsoft. All rights reserved',
-					'OriginalFilename': basename,
-					'ProductName': productContents.nameLong,
-					'ProductVersion': packageJsonContents.version,
-				}
-			});
-		});
-
-		await Promise.all(patchPromises);
-	};
-}
-
 function prepareCopilotRipgrepShimTaskREH(platform: string, arch: string, destinationFolderName: string) {
 	return async () => {
 		const outputDir = path.join(BUILD_ROOT, destinationFolderName);
@@ -668,10 +594,6 @@ function tweakProductForServerWeb(product: typeof import('../product.json')) {
 				packageTask(type, platform, arch, sourceFolderName, destinationFolderName),
 				prepareCopilotRipgrepShimTaskREH(platform, arch, destinationFolderName)
 			];
-
-			// VOLTER (overlaid tier — scripts/workbench/overlay.mjs): no signing service re-signs
-			// this release, so win32 binaries keep their published bytes (patchWin32Dependencies).
-			void patchWin32DependenciesTask;
 
 			const serverTaskCI = task.define(`vscode-${type}${dashed(platform)}${dashed(arch)}${dashed(minified)}-ci`, task.series(...packageTasks));
 			task.task(serverTaskCI);

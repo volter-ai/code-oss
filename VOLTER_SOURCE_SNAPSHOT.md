@@ -104,6 +104,43 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `AbstractExtensionService`'s queue, and each waits for the extension host to take the one before
   (`ExtensionHostManager.deltaExtensions`), so packages installed one call each registered only after the host
   started plus a round trip per package. Used by the editor's `volterExtensions.ts`.
+- **The extension host survives a slow start and a drained socket** (W71).
+  `src/vs/server/node/extensionHostConnection.ts` holds a connection that arrives before the host said
+  `VSCODE_EXTHOST_IPC_READY` and ends the earlier one, so the host takes the connection the client is still on;
+  `src/vs/base/parts/ipc/node/ipc.net.ts` ends a drain with an empty write's callback, so a reply still in flight no
+  longer holds the reconnection.
+- **Workspace storage can live at an embedder's URL.** `IWorkbenchConstructionOptions.workspaceStorageUrl`
+  (`src/vs/workbench/browser/web.api.ts`), passed by `web.main.ts` to `BrowserStorageService`, whose
+  `HttpStorageDatabase` (`src/vs/workbench/services/storage/browser/storageService.ts`) implements
+  `IIndexedDBStorageDatabase` over `GET`/`POST` of that URL. Used by the editor's `frame-proxy.ts` and the limited
+  view's `boot.ts`.
+- **An `ObservableMemento` does not echo its own or a sibling's write.**
+  `src/vs/platform/observable/common/observableMemento.ts` remembers the stored bytes and ignores a storage event that
+  carries them.
+- **`window.titleBarHeight`** is read by both `titlebarPart.ts` files (`src/vs/workbench/browser/parts/titlebar/` and
+  `src/vs/workbench/electron-browser/parts/titlebar/`).
+- **A session-option change for another host's provider is traced, not warned**
+  (`src/vs/workbench/api/browser/mainThreadChatSessions.ts`).
+- **A chat session's input state changes reach only that conversation's input states**
+  (`src/vs/workbench/api/common/extHostChatSessions.ts`).
+- **A tool invocation can end as an error** (`isError`): `extHostTypes.ts`, `extHostTypeConverters.ts`,
+  `chatService.ts`, `chatModel.ts`, `chatToolInvocation.ts`, `chatToolInvocationPart.ts`,
+  `chatToolInvocationSubPart.ts` and `chatResponseAccessibleView.ts`.
+- **Chat setup and its status entry stand down without a default chat agent provider**
+  (`chatSetupContributions.ts`, `chatStatusEntry.ts`: `product.defaultChatAgent?.provider?.default?.id`).
+- **A restored session's history uses the default agent for its location and keeps response-only turns**
+  (`src/vs/workbench/contrib/chat/common/chatService/chatServiceImpl.ts`), and carries the streamed response's result.
+- **A chat list row reports its new height on the next animation frame** (`chatListRenderer.ts`).
+- **The built-in agent host is off**: `VolterAgentHostEnablementService` (`volterHarness/volterChat.services.ts`),
+  registered in place of `AgentHostEnablementService` from `workbench.web.main.ts`.
+
+Build edits a rebase also redoes:
+
+- `build/lib/tsgo.ts` runs the native compiler with `--checkers 1` (the default's parallel checkers raised the
+  compile's peak memory from 5.9 GB to 7.5 GB with no gain in wall time).
+- `.npmrc`'s `disturl` is `https://artifacts.electronjs.org/headers/dist`.
+- `build/gulpfile.reh.ts` has no win32 dependency re-signing task (`patchWin32DependenciesTask` and its signtool and
+  rcedit helpers): no signing service re-signs this release, so its win32 binaries keep their published bytes.
 
 ## Patches moved from the editor overlay
 

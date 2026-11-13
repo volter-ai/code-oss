@@ -3,7 +3,7 @@
  *
  *  Code-OSS owns the composer, transcript, toolbar, menus and session list; the bundled
  *  `supercode-frontend-vscode` extension adapts the runtime's protocol; the editor host owns
- *  runtime lifecycle (`packages/editor-core/server/frontend-controls.ts`). These are the few
+ *  runtime lifecycle (`packages/chat/serving/frontend-controls.ts`). These are the few
  *  doors this Code-OSS pin does not give an extension session provider on its own.
  *--------------------------------------------------------------------------------------------*/
 
@@ -12,7 +12,6 @@ import { URI } from '../../../../../base/common/uri.js';
 import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { isCancellationError } from '../../../../../base/common/errors.js';
 import { localize2 } from '../../../../../nls.js';
-import { IAgentHostEnablementService } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
@@ -93,18 +92,11 @@ registerAction2(class extends Action2 {
 	constructor() { super({ id: 'volter.chat.inspect', title: localize2('inspectHarnessChat', 'Inspect Chat Runtime'), f1: false }); }
 	run(accessor: ServicesAccessor) {
 		const widget = accessor.get(IChatWidgetService).lastFocusedWidget;
-		const navigation = accessor.get(IHarnessChatNavigationService);
 		const model = widget?.input.selectedLanguageModel.get()?.metadata;
 		return {
-			builtInAgentHostEnabled: accessor.get(IAgentHostEnablementService).enabled.get(),
 			sessionResource: widget?.viewModel?.sessionResource.toString(),
 			selectedHarness: model?.vendor === 'supercode-runtime' ? model.family : undefined,
 			input: widget?.getInput(),
-			activeConversationResource: navigation.activeResource,
-			navigationOutcome: navigation.outcome,
-			passive: widget?.viewModel?.sessionResource.scheme === 'supercode'
-				&& !widget.viewModel.sessionResource.path.startsWith('/untitled-')
-				&& widget.viewModel.sessionResource.toString() !== navigation.activeResource,
 		};
 	}
 });
