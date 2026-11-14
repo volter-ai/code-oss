@@ -96,9 +96,10 @@ rebase onto a newer Code-OSS can redo them as a checklist:
 - **A prompt is sent with Chat's own answer.** `volter.chat.send` (`volterHarness/volterChat.ts`) sends `{ query,
   resource? }` through `IChatWidget.acceptInput(query, { preserveInput: true })` on the focused (or named, opened)
   conversation and answers what it resolved to: `{ sent: true, sessionResource, requestId, responseId }` once the
-  request was sent, or `{ sent: false, why }`: a model still being chosen (`hasPendingProgrammaticModelSelection`),
-  the composer keeping it (`undefined`), or the session provider's own refusal (the rejection's message). A rebase
-  keeps `acceptInput`'s promise of the response model, or redoes it against its successor.
+  request was sent, or `{ sent: false, why }`: a named conversation that didn't open, a model still being chosen
+  (`hasPendingProgrammaticModelSelection`), the composer keeping it (`undefined`), a session provider refusing by
+  cancelling (`cancelled: true`, its reason shown in Chat), or another failure's message. A rebase keeps
+  `acceptInput`'s promise of the response model, or redoes it against its successor.
 - **A set of extensions installs from its folders as one change.** `installFromLocations(locations, profileLocation)`
   beside `installFromLocation`: `IExtensionManagementService` (`src/vs/platform/extensionManagement/common/extensionManagement.ts`)
   and `CommontExtensionManagementService` declare it; the node `ExtensionManagementService` scans each folder and
