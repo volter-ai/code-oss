@@ -93,6 +93,12 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   and `IChatToolInvocation.executionConfirmedOrDenied`. It returns the last 20 items unless asked for `last`, each text
   cut at 2000 characters with its `textLength`. A rebase keeps those view model and part types, or redoes it against
   their successors.
+- **A prompt is sent with Chat's own answer.** `volter.chat.send` (`volterHarness/volterChat.ts`) sends `{ query,
+  resource? }` through `IChatWidget.acceptInput(query, { preserveInput: true })` on the focused (or named, opened)
+  conversation and answers what it resolved to: `{ sent: true, sessionResource, requestId, responseId }` once the
+  request was sent, or `{ sent: false, why }`: a model still being chosen (`hasPendingProgrammaticModelSelection`),
+  the composer keeping it (`undefined`), or the session provider's own refusal (the rejection's message). A rebase
+  keeps `acceptInput`'s promise of the response model, or redoes it against its successor.
 - **A set of extensions installs from its folders as one change.** `installFromLocations(locations, profileLocation)`
   beside `installFromLocation`: `IExtensionManagementService` (`src/vs/platform/extensionManagement/common/extensionManagement.ts`)
   and `CommontExtensionManagementService` declare it; the node `ExtensionManagementService` scans each folder and
