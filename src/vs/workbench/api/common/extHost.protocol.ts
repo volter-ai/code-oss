@@ -3918,9 +3918,18 @@ export interface IChatSessionDto {
 	history: Array<IChatSessionHistoryItemDto>;
 	hasActiveResponseCallback: boolean;
 	hasRequestHandler: boolean;
+	/** The read-only banner's words for a session without a request handler. */
+	readOnlyMessage?: string;
 	hasForkHandler: boolean;
 	supportsInterruption: boolean;
 	options?: Record<string, string | IChatSessionProviderOptionItem>;
+}
+
+/** A held session's content asked for again (`onDidChangeChatSessionContent`): what the workbench takes from it. */
+export interface IChatSessionContentRefreshDto {
+	title?: string;
+	hasRequestHandler: boolean;
+	readOnlyMessage?: string;
 }
 
 export interface IChatSessionProviderOptions {
@@ -3944,6 +3953,7 @@ export interface MainThreadChatSessionsShape extends IDisposable {
 	$unregisterChatSessionContentProvider(handle: number): void;
 	$onDidChangeChatSessionOptions(handle: number, sessionResource: UriComponents, updates: Record<string, string | IChatSessionProviderOptionItem>): void;
 	$onDidChangeChatSessionProviderOptions(handle: number): void;
+	$onDidChangeChatSessionContent(handle: number, sessionResource: UriComponents): void;
 
 	$updateChatSessionInputState(controllerHandle: number, sessionResource: UriComponents, optionGroups: readonly IChatSessionProviderOptionGroup[]): void;
 
@@ -3964,6 +3974,8 @@ export interface ExtHostChatSessionsShape {
 	$newChatSessionItem(controllerHandle: number, request: IChatNewSessionRequestDto, token: CancellationToken): Promise<Dto<IChatSessionItem> | undefined>;
 
 	$provideChatSessionContent(providerHandle: number, sessionResource: UriComponents, context: ChatSessionContentContextDto, token: CancellationToken): Promise<IChatSessionDto>;
+	/** The content of a session the workbench holds, asked for again with the input state it was given; undefined where the ext host holds none. */
+	$refreshChatSessionContent(providerHandle: number, sessionResource: UriComponents, token: CancellationToken): Promise<IChatSessionContentRefreshDto | undefined>;
 	$interruptChatSessionActiveResponse(providerHandle: number, sessionResource: UriComponents, requestId: string): Promise<void>;
 	$disposeChatSessionContent(providerHandle: number, sessionResource: UriComponents): Promise<void>;
 	$invokeChatSessionRequestHandler(providerHandle: number, sessionResource: UriComponents, request: IChatAgentRequest, history: any[], token: CancellationToken): Promise<IChatAgentResult>;

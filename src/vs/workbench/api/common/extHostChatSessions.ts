@@ -26,7 +26,7 @@ import { getChatSessionType, isUntitledChatSession } from '../../contrib/chat/co
 import { IChatAgentRequest, IChatAgentResult } from '../../contrib/chat/common/participants/chatAgents.js';
 import { isProposedApiEnabled } from '../../services/extensions/common/extensions.js';
 import { Proxied } from '../../services/extensions/common/proxyIdentifier.js';
-import { ChatSessionContentContextDto, ExtHostChatSessionsShape, IChatAgentProgressShape, IChatNewSessionRequestDto, IChatSessionDto, IChatSessionProviderOptions, IChatSessionRequestHistoryItemDto, IChatSessionResponseResultDto, MainContext, MainThreadChatSessionsShape } from './extHost.protocol.js';
+import { ChatSessionContentContextDto, ExtHostChatSessionsShape, IChatAgentProgressShape, IChatNewSessionRequestDto, IChatSessionContentRefreshDto, IChatSessionDto, IChatSessionProviderOptions, IChatSessionRequestHistoryItemDto, IChatSessionResponseResultDto, MainContext, MainThreadChatSessionsShape } from './extHost.protocol.js';
 import { ChatAgentResponseStream } from './extHostChatAgents2.js';
 import { CommandsConverter, ExtHostCommands } from './extHostCommands.js';
 import { ExtHostLanguageModels } from './extHostLanguageModels.js';
@@ -351,7 +351,8 @@ class ExtHostChatSession {
 	answersCarousels = false;
 
 	constructor(
-		public readonly session: vscode.ChatSession,
+		/** The provider's content, replaced when the workbench asks for it again (`$refreshChatSessionContent`). */
+		public session: vscode.ChatSession,
 		public readonly extension: IExtensionDescription,
 		request: IChatAgentRequest,
 		public readonly proxy: IChatAgentProgressShape,
@@ -409,7 +410,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 	/**
 	 * Map of uri -> chat sessions infos
 	 */
-	private readonly _extHostChatSessions = new ResourceMap<{ readonly sessionObj: ExtHostChatSession; readonly disposeCts: CancellationTokenSource }>();
+	private readonly _extHostChatSessions = new ResourceMap<{ readonly sessionObj: ExtHostChatSession; readonly disposeCts: CancellationTokenSource; readonly inputState: vscode.ChatSessionInputState }>();
 
 	/**
 	 * Map of proxy command id -> original command id + controller handle.
@@ -655,6 +656,12 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			}));
 		}
 
+		if (provider.onDidChangeChatSessionContent) {
+			disposables.add(provider.onDidChangeChatSessionContent(evt => {
+				this._proxy.$onDidChangeChatSessionContent(handle, evt.resource);
+			}));
+		}
+
 		return new extHostTypes.Disposable(() => {
 			this._chatSessionContentProviders.delete(handle);
 			disposables.dispose();
@@ -685,22 +692,26 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			controllerData?.optionGroups ?? [], context.initialSessionOptions
 		);
 
+		let session: vscode.ChatSession;
 		if (inputState instanceof ChatSessionInputStateImpl) {
-			// Dispose any previous input states for this session resource
-			if (controllerData) {
-				this._disposeInputStatesForResource(controllerData.inputStates, sessionResource);
-			}
-
 			if (isUntitledChatSession(sessionResource)) {
 				inputState.untitledSessionResource = sessionResource;
 			} else {
 				inputState.sessionResource = sessionResource;
 			}
+			// The previous input states for this session resource are disposed once the provider has answered with the new
+			// one: a provider that keeps a session's content while its input state lives sees this ask while it still holds
+			// it (`onDidChangeChatSessionContent`'s re-ask).
+			try {
+				session = await provider.provider.provideChatSessionContent(sessionResource, token, { inputState });
+			} finally {
+				if (controllerData) {
+					this._disposeInputStatesForResource(controllerData.inputStates, sessionResource, inputState);
+				}
+			}
+		} else {
+			session = await provider.provider.provideChatSessionContent(sessionResource, token, { inputState });
 		}
-
-		const session = await provider.provider.provideChatSessionContent(sessionResource, token, {
-			inputState,
-		});
 		if (token.isCancellationRequested) {
 			throw new CancellationError();
 		}
@@ -734,7 +745,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		// interruption, so the earlier one may still be here). Its disposables are released without cancelling it, and
 		// it reaches nothing more (`isCurrent`).
 		this._extHostChatSessions.get(sessionResource)?.sessionObj.sessionDisposables.dispose();
-		this._extHostChatSessions.set(sessionResource, { sessionObj: chatSession, disposeCts });
+		this._extHostChatSessions.set(sessionResource, { sessionObj: chatSession, disposeCts, inputState });
 
 		// The active response ends with the ChatResult its callback resolves with, and its questions are answered
 		// (`chatSessionResponses`).
@@ -766,6 +777,7 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			title: session.title,
 			hasActiveResponseCallback: !!session.activeResponseCallback,
 			hasRequestHandler: !!session.requestHandler,
+			readOnlyMessage: session.readOnlyMessage,
 			hasForkHandler: !!controllerData?.controller.forkHandler || !!session.forkHandler,
 			supportsInterruption: !!capabilities?.supportsInterruptions,
 			options: session.options,
@@ -777,6 +789,26 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 				}
 			})
 		};
+	}
+
+	/**
+	 * A HELD SESSION'S CONTENT, ASKED FOR AGAIN (its provider's `onDidChangeChatSessionContent`): with the input state it
+	 * was given, so the provider sees the ask while it holds that state. The session's object takes the new content's
+	 * request and fork handlers; the response it streams and the history the workbench shows are the ones it has.
+	 */
+	async $refreshChatSessionContent(handle: number, sessionResourceComponents: UriComponents, token: CancellationToken): Promise<IChatSessionContentRefreshDto | undefined> {
+		const provider = this._chatSessionContentProviders.get(handle);
+		const sessionResource = URI.revive(sessionResourceComponents);
+		const entry = this._extHostChatSessions.get(sessionResource);
+		if (!provider || !entry) {
+			return undefined;
+		}
+		const session = await provider.provider.provideChatSessionContent(sessionResource, token, { inputState: entry.inputState });
+		if (token.isCancellationRequested || this._extHostChatSessions.get(sessionResource) !== entry) {
+			return undefined;
+		}
+		entry.sessionObj.session = session;
+		return { title: session.title, hasRequestHandler: !!session.requestHandler, readOnlyMessage: session.readOnlyMessage };
 	}
 
 	async $provideHandleOptionsChange(handle: number, sessionResourceComponents: UriComponents, updates: Record<string, string | IChatSessionProviderOptionItem | undefined>, token: CancellationToken): Promise<void> {
@@ -1002,10 +1034,10 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 		return undefined;
 	}
 
-	private _disposeInputStatesForResource(inputStates: Set<ChatSessionInputStateImpl>, resource: URI): void {
+	private _disposeInputStatesForResource(inputStates: Set<ChatSessionInputStateImpl>, resource: URI, keep?: vscode.ChatSessionInputState): void {
 		for (const inputState of inputStates) {
 			const inputResource = inputState.sessionResource ?? inputState.untitledSessionResource;
-			if (inputResource && isEqual(resource, inputResource)) {
+			if (inputState !== keep && inputResource && isEqual(resource, inputResource)) {
 				inputState._dispose();
 				inputStates.delete(inputState);
 			}
@@ -1129,8 +1161,8 @@ export class ExtHostChatSessions extends Disposable implements ExtHostChatSessio
 			model = await this._languageModels.getDefaultLanguageModel(extension);
 			if (!model) {
 				// A BUILD WITH NO CHAT MODEL AT ALL is not a broken request. A product may ship a
-				// default chat participant whose agent brings its own model — supercode's harness
-				// frontends are the case this exists for — and contributes no
+				// default chat participant whose agent brings its own model (a harness frontend) and
+				// contributes no
 				// `languageModelChatProviders`; the editor then has nothing to choose, and
 				// refusing every request with "Language model unavailable" refuses the product's
 				// own agent. Models EXIST but none is the default is still an error: that is a

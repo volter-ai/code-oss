@@ -13,11 +13,11 @@ import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { isCancellationError } from '../../../../../base/common/errors.js';
 import { localize2 } from '../../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
 import { ChatViewPaneTarget, IChatWidgetService } from '../chat.js';
-import { IHarnessChatNavigationService } from './volterChatNavigation.js';
 import { isHarnessApproval } from './volterChatApproval.js';
 import { IChatToolInvocation, IChatToolInvocationSerialized, ToolConfirmKind } from '../../common/chatService/chatService.js';
 import { IChatProgressResponseContent } from '../../common/model/chatModel.js';
@@ -38,48 +38,42 @@ registerAction2(class extends Action2 {
 	}
 });
 
-// Bound conversations activate through the awaited native navigation boundary.
-// Focus bookkeeping (including newly materialized sessions) must not race it.
+// THE FOCUSED CONVERSATION, told to the session provider (`supercode.frontend.focusSession`), which reads it for its
+// controls and for which conversation a shown one is read-only beside. Opening a conversation and making it the one
+// the runtime runs are the provider's own, in its `provideChatSessionContent` (`volter.chat.sessionGateCapability`
+// below): the workbench keeps no gate of its own.
 class HarnessChatFocus extends Disposable {
 	static readonly ID = 'volter.harnessChatFocus';
 	constructor(
 		@IChatWidgetService widgets: IChatWidgetService,
-		@IHarnessChatNavigationService navigation: IHarnessChatNavigationService,
+		@ICommandService commands: ICommandService,
 		@INotificationService notifications: INotificationService,
 	) {
 		super();
 		let last: string | undefined;
-		let lastResource: URI | undefined;
-		let lastWidget: typeof widgets.lastFocusedWidget;
-		let generation = 0;
 		let observingHarness = false;
 		const sync = () => {
-			const widget = widgets.lastFocusedWidget;
-			const resource = widget?.viewModel?.sessionResource;
+			const resource = widgets.lastFocusedWidget?.viewModel?.sessionResource;
 			const key = resource?.toString();
 			if (key === last) { return; }
-			const materialized = widget === lastWidget && lastResource?.scheme === 'supercode'
-				&& lastResource.path.startsWith('/untitled-') && resource?.scheme === 'supercode'
-				&& !resource.path.startsWith('/untitled-');
 			last = key;
-			lastResource = resource;
-			lastWidget = widget;
-			const current = ++generation;
 			observingHarness ||= resource?.scheme === 'supercode';
 			if (!observingHarness) { return; }
-			void navigation.syncFocus(resource, () => current === generation
-				&& widgets.lastFocusedWidget?.viewModel?.sessionResource.toString() === key, materialized).catch(error => {
-				if (isCancellationError(error)) { return; }
-				if (current !== generation) { return; }
-				last = undefined;
-				notifications.error(error);
-			});
+			commands.executeCommand('supercode.frontend.focusSession', key).then(undefined, error => notifications.error(error));
 		};
 		this._register(widgets.onDidChangeFocusedSession(sync));
 		sync();
 	}
 }
 registerWorkbenchContribution2(HarnessChatFocus.ID, HarnessChatFocus, WorkbenchPhase.AfterRestored);
+
+// Versioned support for the session provider owning a conversation's open and its read-only state: the workbench asks
+// for a held session's content again on its provider's `onDidChangeChatSessionContent`, draws content without a
+// `requestHandler` read-only with its `readOnlyMessage`, and keeps no open gate of its own.
+registerAction2(class extends Action2 {
+	constructor() { super({ id: 'volter.chat.sessionGateCapability', title: localize2('sessionGateCapability', 'Session Provider Gate Capability'), f1: false }); }
+	run() { return { version: 1 }; }
+});
 
 // Versioned support for native confirmation cards that answer a running turn.
 registerAction2(class extends Action2 {

@@ -437,6 +437,8 @@ export interface IChatSession extends IDisposable {
 	 */
 	readonly resultObs?: IObservable<Pick<IChatAgentResult, 'details' | 'errorDetails'> | undefined>;
 	readonly isReadOnly?: IObservable<boolean>;
+	/** The read-only banner's words while {@link isReadOnly}, where the provider gives them. */
+	readonly readOnlyMessage?: IObservable<string | undefined>;
 	readonly interruptActiveResponseCallback?: () => Promise<boolean>;
 
 	/**

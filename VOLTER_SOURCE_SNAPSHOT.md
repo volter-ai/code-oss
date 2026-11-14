@@ -139,6 +139,20 @@ rebase onto a newer Code-OSS can redo them as a checklist:
 - **A restored session's history uses the default agent for its location and keeps response-only turns**
   (`src/vs/workbench/contrib/chat/common/chatService/chatServiceImpl.ts`), and carries the streamed response's result.
 - **A chat list row reports its new height on the next animation frame** (`chatListRenderer.ts`).
+- **A chat session provider owns a conversation's open and its read-only state** (FK1; proposal
+  `chatSessionsProvider`). `vscode.proposed.chatSessionsProvider.d.ts` adds
+  `ChatSessionContentProvider.onDidChangeChatSessionContent` (`ChatSessionContentChangeEvent`, `{resource}`) and
+  `ChatSession.readOnlyMessage`. `extHostChatSessions.ts` forwards the event (`$onDidChangeChatSessionContent`) and
+  answers `$refreshChatSessionContent`: the held session's content asked for again with the input state it was given,
+  whose request and fork handlers the session object takes; it disposes a resource's earlier input states only once the
+  provider has answered with the new one. `mainThreadChatSessions.ts`'s `ObservableChatSession` holds `isReadOnly`
+  (no request handler) and `readOnlyMessage`, refreshed by `refreshContent`; `chatSessionsService.ts`,
+  `chatModelStore.ts`, `chatServiceImpl.ts` and `chatModel.ts` (`IChatModel.readOnlyMessage`, its test double in
+  `mockChatModel.ts`) carry the words to `chatWidget.ts`, which sets them on `ChatReadOnlyBanner.setMessage`.
+  `volter.chat.sessionGateCapability` (`{ version: 1 }`, `volterHarness/volterChat.ts`) tells the provider; the
+  fork keeps no gate of its own (the moved patches below say which went).
+- **A widget locked to an agent does not put that agent's mention back in its input**
+  (`chatInputEditorContrib.ts`, `repopulateAgentCommand`): the widget is routed to it whole.
 - **The built-in agent host is off**: `VolterAgentHostEnablementService` (`volterHarness/volterChat.services.ts`),
   registered in place of `AgentHostEnablementService` from `workbench.web.main.ts`.
 
@@ -174,6 +188,14 @@ overlay can drop it.
 | `a36ad3ad2dad` | `patchNpmDirs` | `build/npm/dirs.ts` |
 | `aede13df14f0` | `main()` inline: vscode-api-tests out of the dev compile | `build/gulpfile.extensions.ts` |
 | `cc13aa989177` | `harnessChatSources`: Volter's harness Chat modules, beside the patches that import them | `src/vs/workbench/contrib/chat/browser/volterHarness/**`, the eight chat-patch files' imports, `src/vs/workbench/workbench.common.main.ts`, `build/gulpfile.vscode.web.ts` |
+
+**Gone with FK1/FK2:** `patchHarnessChatNavigation` (`280edb3510b8`), `patchHarnessMoveActions` (`aef57c2e0968`),
+`patchHarnessPassiveViews` (`619a7760a07c`) and `patchHarnessDraftAgentMention` (`f95416c09cdc`) are reverted, with
+`volterHarness/volterChatNavigation.ts` (its serialized opens, `assertInteractive` and `chatWidget.ts`'s
+`_harnessInactive`): the session provider owns opens and read-only state (the FK1 change above). From
+`patchNativeChat` (`298969b7204a`), the answer group (`harnessAnswerGroup`, keyed on `supercode.frontend.respond`)
+is gone from `extHostTypeConverters.ts`, `chatService.ts`, `annotations.ts` and `chatCommandContentPart.ts`. Generic
+chat code names no session provider: `grep -ri supercode` finds Volter's harness modules alone.
 
 The chat patches import Volter's harness Chat modules from
 `src/vs/workbench/contrib/chat/browser/volterHarness/` (`harnessChatSources`), in this repository.

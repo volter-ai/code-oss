@@ -12,7 +12,6 @@ import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { IChatConfirmation } from '../../common/chatService/chatService.js';
 import { IChatContentPartRenderContext } from '../widget/chatContentParts/chatContentParts.js';
 import { ChatConfirmationWidget } from '../widget/chatContentParts/chatConfirmationWidget.js';
-import { IHarnessChatNavigationService } from './volterChatNavigation.js';
 
 interface ApprovalAnswer {
 	connectionId: string;
@@ -69,7 +68,6 @@ export class HarnessChatApprovalContentPart extends Disposable {
 		context: IChatContentPartRenderContext,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ICommandService commands: ICommandService,
-		@IHarnessChatNavigationService navigation: IHarnessChatNavigationService,
 		@INotificationService notifications: INotificationService,
 	) {
 		super();
@@ -93,7 +91,6 @@ export class HarnessChatApprovalContentPart extends Disposable {
 		this._register(widget.onDidClick(async ({ button }) => {
 			if (!enabled || dispatching || confirmation.isUsed) { return; }
 			try {
-				navigation.assertInteractive(resource);
 				dispatching = true;
 				disablement.fire(true);
 				const result = await commands.executeCommand<{ status?: string }>('supercode.frontend.respondInTurnApproval', button.data);

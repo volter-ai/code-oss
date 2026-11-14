@@ -483,6 +483,12 @@ declare module 'vscode' {
 		readonly requestHandler: ChatRequestHandler | undefined;
 
 		/**
+		 * What the editor's read-only banner says for a session without a {@link ChatSession.requestHandler requestHandler},
+		 * which is read-only. Without one, the banner keeps its own words.
+		 */
+		readonly readOnlyMessage?: string;
+
+		/**
 		 * Handles a request to fork the session.
 		 *
 		 * The handler should create a new session on the provider's backend and
@@ -524,9 +530,27 @@ declare module 'vscode' {
 	}
 
 	/**
+	 * Event fired when a chat session's content changed.
+	 */
+	export interface ChatSessionContentChangeEvent {
+		/**
+		 * The resource of the chat session whose content changed.
+		 */
+		readonly resource: Uri;
+	}
+
+	/**
 	 * Provides the content for a chat session rendered using the native chat UI.
 	 */
 	export interface ChatSessionContentProvider {
+		/**
+		 * Event that the provider can fire to signal that the content of a chat session the editor holds has changed:
+		 * the editor asks {@link ChatSessionContentProvider.provideChatSessionContent} for it again, with the input state
+		 * it holds, and takes from the answer whether the session takes requests ({@link ChatSession.requestHandler}),
+		 * its {@link ChatSession.readOnlyMessage} and its title. The history it shows is the one it has.
+		 */
+		readonly onDidChangeChatSessionContent?: Event<ChatSessionContentChangeEvent>;
+
 		/**
 		 * @deprecated
 		 *

@@ -961,8 +961,8 @@ export class ExtHostChatAgents2 extends Disposable implements ExtHostChatAgentsS
 			model = await this._languageModels.getDefaultLanguageModel(extension);
 			if (!model) {
 				// A BUILD WITH NO CHAT MODEL AT ALL is not a broken request. A product may ship a
-				// default chat participant whose agent brings its own model — supercode's harness
-				// frontends are the case this exists for — and contributes no
+				// default chat participant whose agent brings its own model (a harness frontend) and
+				// contributes no
 				// `languageModelChatProviders`; the editor then has nothing to choose, and
 				// refusing every request with "Language model unavailable" refuses the product's
 				// own agent. Models EXIST but none is the default is still an error: that is a
