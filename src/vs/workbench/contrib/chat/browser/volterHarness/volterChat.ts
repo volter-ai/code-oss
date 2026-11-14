@@ -87,6 +87,58 @@ registerAction2(class extends Action2 {
 	run() { return { version: 1 }; }
 });
 
+// Versioned support for `volter.chat.send`, as `volter.chat.inTurnApprovalCapability` declares its own: a caller asks
+// it before relying on the send's answer, and an older workbench, which has neither, answers neither.
+registerAction2(class extends Action2 {
+	constructor() { super({ id: 'volter.chat.sendCapability', title: localize2('sendCapability', 'Native Send Capability'), f1: false }); }
+	run() { return { version: 1 }; }
+});
+
+// A PROMPT SENT AS CHAT'S OWN COMPOSER SENDS IT, answered with Code-OSS's own answer: `IChatWidget.acceptInput`, which
+// resolves once the request has been sent (its response model), or with `undefined` where the composer kept it, and
+// rejects where the send failed. A session provider that refuses a send by cancelling it (a cancellation error)
+// answers `cancelled`: the provider's reason is shown in Chat, not carried in the cancellation. A provider that refuses
+// by answering nothing lets the send go ahead, and is not caught here.
+// `workbench.action.chat.open` doesn't await its submit, so a caller of it can only guess from the runtime's state;
+// this answers the send itself. The prompt goes as `cyclotron chat send` gave it, the person's draft kept
+// (`preserveInput`). `resource` names the conversation to send into (opened first, as `volter.chat.openSession`
+// opens it, and refused where the widget that comes back shows another); without one, the focused Chat.
+registerAction2(class extends Action2 {
+	constructor() { super({ id: 'volter.chat.send', title: localize2('sendHarnessChat', 'Send to Chat'), f1: false }); }
+	async run(accessor: ServicesAccessor, args: { query?: unknown; resource?: unknown } | undefined): Promise<
+		{ sent: true; sessionResource: string; requestId: string; responseId: string } | { sent: false; why: string; cancelled?: true }
+	> {
+		const query = args?.query;
+		if (typeof query !== 'string' || query.trim() === '') { throw new Error('volter.chat.send takes { query, resource? }: the prompt, and the conversation to send it to.'); }
+		const widgets = accessor.get(IChatWidgetService);
+		const named = typeof args?.resource === 'string' ? URI.parse(args.resource) : undefined;
+		const widget = named
+			? await widgets.openSession(named, ChatViewPaneTarget, { revealIfOpened: true })
+			: widgets.lastFocusedWidget;
+		if (!widget) { return { sent: false, why: 'No Chat is open to send the prompt to.' }; }
+		// (the conversation named is the one that opened, as `volter.chat.openSession` checks)
+		if (named && widget.viewModel?.sessionResource.toString() !== named.toString()) {
+			return { sent: false, why: `The conversation ${named.toString()} did not open, so the prompt was not sent.` };
+		}
+		// (the composer's own reasons to keep a prompt, named where it can be read before the send)
+		if (widget.input.hasPendingProgrammaticModelSelection) {
+			return { sent: false, why: 'Chat\'s model is still being chosen, so its composer kept the prompt.' };
+		}
+		let response;
+		try {
+			response = await widget.acceptInput(query, { preserveInput: true });
+		} catch (error) {
+			// (a provider that refuses by cancelling says why in Chat; any other failure is said by its message)
+			if (isCancellationError(error)) { return { sent: false, why: 'the chat provider refused the send', cancelled: true }; }
+			return { sent: false, why: error instanceof Error && error.message ? error.message : 'Chat\'s send failed without saying why.' };
+		}
+		if (!response) {
+			return { sent: false, why: widget.viewModel ? 'Chat\'s composer kept the prompt (a read-only conversation, a send it refused, or requests it waits on).' : 'Chat has no conversation to send the prompt to.' };
+		}
+		return { sent: true, sessionResource: response.session.sessionResource.toString(), requestId: response.requestId, responseId: response.id };
+	}
+});
+
 // Read-only diagnostics for the product's native Chat/runtime boundary.
 registerAction2(class extends Action2 {
 	constructor() { super({ id: 'volter.chat.inspect', title: localize2('inspectHarnessChat', 'Inspect Chat Runtime'), f1: false }); }
