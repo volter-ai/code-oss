@@ -35,13 +35,10 @@ import { ChatAgentLocation, ChatModeKind, IResolvedNewChatSessionType, SessionTy
 import { clearChatEditor } from '../../actions/chatClear.js';
 import { AgentHostSessionInputPills } from '../../agentSessions/agentHost/agentHostSessionInputPills.js';
 import { ChatEditorInput } from './chatEditorInput.js';
-import { HarnessChatNavigationPermit } from '../../volterHarness/volterChatNavigation.js';
 import { ChatWidget } from '../../widget/chatWidget.js';
 import { IChatWidgetViewState, setModelPreservingInputTypedWhileLoading } from '../../chat.js';
 
 export interface IChatEditorOptions extends IEditorOptions {
-	/** Internal permit for a nested native load in the same guarded transaction. */
-	harnessNavigationPermit?: HarnessChatNavigationPermit;
 	/**
 	 * Input state of the model when the editor is opened. Currently needed since
 	 * new sessions are not persisted but may go away with

@@ -7,7 +7,7 @@ import './media/chatReadOnlyBanner.css';
 import * as dom from '../../../../../base/browser/dom.js';
 import { renderIcon } from '../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
-import { Disposable, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { localize } from '../../../../../nls.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 
@@ -18,12 +18,12 @@ export class ChatReadOnlyBanner extends Disposable {
 	readonly domNode: HTMLElement;
 
 	private _visible = false;
-	private readonly text: HTMLElement;
-	private readonly messageHover = this._register(new MutableDisposable());
+	private readonly _text: HTMLElement;
+	private _shown: string;
 
 	constructor(
-		private readonly message: string = localize('chatReadOnlyBanner.archivedMessage', "Archived sessions are read-only."),
-		@IHoverService private readonly hoverService: IHoverService,
+		private readonly _message: string = localize('chatReadOnlyBanner.archivedMessage', "Archived sessions are read-only."),
+		@IHoverService hoverService: IHoverService,
 	) {
 		super();
 
@@ -35,19 +35,20 @@ export class ChatReadOnlyBanner extends Disposable {
 		renderedIcon.setAttribute('aria-hidden', 'true');
 		icon.appendChild(renderedIcon);
 
-		this.text = dom.append(this.domNode, dom.$('span.chat-readonly-banner-text'));
-		this.setMessage();
+		const text = this._text = dom.append(this.domNode, dom.$('span.chat-readonly-banner-text'));
+		text.textContent = this._shown = _message;
+		this._register(hoverService.setupDelayedHover(text, () => ({ content: this._shown })));
 
 		this.setVisible(false);
 	}
 
-	setMessage(message: string = this.message): void {
-		this.text.textContent = message;
-		this.messageHover.value = this.hoverService.setupDelayedHover(this.text, { content: message });
-	}
-
 	get visible(): boolean {
 		return this._visible;
+	}
+
+	/** The banner's words: a session provider's own for its read-only session, else the banner's own. */
+	setMessage(message: string | undefined): void {
+		this._text.textContent = this._shown = message ?? this._message;
 	}
 
 	setVisible(visible: boolean): void {

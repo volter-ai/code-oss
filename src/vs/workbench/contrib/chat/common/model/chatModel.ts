@@ -1858,6 +1858,8 @@ export interface IChatModel extends IDisposable {
 	/** Provides session information when a request needs user interaction to continue */
 	readonly requestNeedsInput: IObservable<IChatRequestNeedsInputInfo | undefined>;
 	readonly isReadOnly: IObservable<boolean>;
+	/** The read-only banner's words while {@link isReadOnly}, where the session's provider gives them. */
+	readonly readOnlyMessage: IObservable<string | undefined>;
 	readonly inputPlaceholder?: string;
 	readonly editingSession?: IChatEditingSession | undefined;
 	readonly checkpoint: IChatRequestModel | undefined;
@@ -2676,6 +2678,7 @@ export class ChatModel extends Disposable implements IChatModel {
 	readonly hasActiveRequest: IObservable<boolean>;
 	readonly requestNeedsInput: IObservable<IChatRequestNeedsInputInfo | undefined>;
 	readonly isReadOnly: IObservable<boolean>;
+	readonly readOnlyMessage: IObservable<string | undefined>;
 
 	/** Input model for managing input state */
 	readonly inputModel: InputModel;
@@ -2791,7 +2794,7 @@ export class ChatModel extends Disposable implements IChatModel {
 
 	constructor(
 		dataRef: ISerializedChatDataReference | undefined,
-		initialModelProps: { initialLocation: ChatAgentLocation; canUseTools: boolean; sessionTypeSelectionReason?: SessionTypeSelectionReason; inputState?: ISerializableChatModelInputState; resource?: URI; disableBackgroundKeepAlive?: boolean; isReadOnly?: IObservable<boolean> },
+		initialModelProps: { initialLocation: ChatAgentLocation; canUseTools: boolean; sessionTypeSelectionReason?: SessionTypeSelectionReason; inputState?: ISerializableChatModelInputState; resource?: URI; disableBackgroundKeepAlive?: boolean; isReadOnly?: IObservable<boolean>; readOnlyMessage?: IObservable<string | undefined> },
 		@ILogService private readonly logService: ILogService,
 		@IChatAgentService private readonly chatAgentService: IChatAgentService,
 		@IChatEditingService private readonly chatEditingService: IChatEditingService,
@@ -2851,6 +2854,7 @@ export class ChatModel extends Disposable implements IChatModel {
 
 		this._canUseTools = initialModelProps.canUseTools;
 		this.isReadOnly = initialModelProps.isReadOnly ?? constObservable(false);
+		this.readOnlyMessage = initialModelProps.readOnlyMessage ?? constObservable(undefined);
 
 		this.lastRequestObs = observableFromEvent(this, this.onDidChange, () => this._requests.at(-1));
 

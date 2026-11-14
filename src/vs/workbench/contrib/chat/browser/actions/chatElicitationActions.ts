@@ -10,7 +10,6 @@ import { Action2, registerAction2 } from '../../../../../platform/actions/common
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { IHarnessChatNavigationService } from '../volterHarness/volterChatNavigation.js';
 import { ElicitationState } from '../../common/chatService/chatService.js';
 import { isResponseVM } from '../../common/model/chatViewModel.js';
 import { IChatWidgetService } from '../chat.js';
@@ -40,7 +39,6 @@ class AcceptElicitationRequestAction extends Action2 {
 			return;
 		}
 
-		accessor.get(IHarnessChatNavigationService).assertInteractive(widget.viewModel?.sessionResource);
 		const items = widget.viewModel?.getItems();
 		if (!items?.length) {
 			return;

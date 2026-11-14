@@ -69,6 +69,12 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 	private readonly _progressObservable = observableValue<IChatProgress[]>(this, []);
 	private readonly _isCompleteObservable = observableValue<boolean>(this, false);
 	private readonly _resultObservable = observableValue<IChatSessionResponseResultDto | undefined>(this, undefined);
+	/** A session whose content has no request handler is read-only (the `chatSessionsProvider` proposal), with its
+	 *  provider's words for the banner; both follow the content as it is asked for again (`refreshContent`). */
+	private readonly _isReadOnlyObservable = observableValue<boolean>(this, false);
+	private readonly _readOnlyMessageObservable = observableValue<string | undefined>(this, undefined);
+	readonly isReadOnly: IObservable<boolean> = this._isReadOnlyObservable;
+	readonly readOnlyMessage: IObservable<string | undefined> = this._readOnlyMessageObservable;
 
 	private readonly _onWillDispose = new Emitter<void>();
 	readonly onWillDispose = this._onWillDispose.event;
@@ -153,6 +159,8 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 
 			this._options = sessionContent.options ? ChatSessionOptionsMap.fromRecord(sessionContent.options) : undefined;
 			this.title = sessionContent.title;
+			this._isReadOnlyObservable.set(!sessionContent.hasRequestHandler, undefined);
+			this._readOnlyMessageObservable.set(sessionContent.readOnlyMessage, undefined);
 			this.history.length = 0;
 			this.history.push(...sessionContent.history.map((turn: IChatSessionHistoryItemDto) => {
 				if (turn.type === 'request') {
@@ -320,6 +328,23 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 			this._logService.error(`Failed to initialize chat session ${this.sessionResource}:`, error);
 			throw error;
 		}
+	}
+
+	/**
+	 * THE CONTENT ASKED FOR AGAIN, as its provider said it changed (`onDidChangeChatSessionContent`): whether the
+	 * session takes requests, its read-only words and its title follow the answer. Its history is the one shown.
+	 */
+	async refreshContent(token: CancellationToken): Promise<void> {
+		if (!this._isInitialized) {
+			return;
+		}
+		const content = await this._proxy.$refreshChatSessionContent(this._providerHandle, this.sessionResource, token);
+		if (!content || token.isCancellationRequested) {
+			return;
+		}
+		this.title = content.title ?? this.title;
+		this._readOnlyMessageObservable.set(content.readOnlyMessage, undefined);
+		this._isReadOnlyObservable.set(!content.hasRequestHandler, undefined);
 	}
 
 	/**
@@ -844,6 +869,15 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 	$onDidChangeChatSessionOptions(handle: number, sessionResourceComponents: UriComponents, updates: Record<string, string | IChatSessionProviderOptionItem>): void {
 		const sessionResource = URI.revive(sessionResourceComponents);
 		this._chatSessionsService.updateSessionOptions(sessionResource, ChatSessionOptionsMap.fromRecord(updates));
+	}
+
+	$onDidChangeChatSessionContent(handle: number, sessionResourceComponents: UriComponents): void {
+		// (a session the workbench holds, from this provider: one it doesn't hold is asked for when it opens)
+		const session = this._activeSessions.get(URI.revive(sessionResourceComponents));
+		if (!session || session.providerHandle !== handle) {
+			return;
+		}
+		session.refreshContent(CancellationToken.None).catch(error => this._logService.error(`Could not ask again for the content of chat session ${session.sessionResource.toString()}:`, error));
 	}
 
 	async $onDidCommitChatSessionItem(handle: number, originalComponents: UriComponents, modifiedCompoennts: UriComponents): Promise<void> {

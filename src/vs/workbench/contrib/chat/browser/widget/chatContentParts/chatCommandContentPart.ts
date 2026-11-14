@@ -14,7 +14,6 @@ import { IChatProgressRenderableResponseContent } from '../../../common/model/ch
 import { IChatCommandButton } from '../../../common/chatService/chatService.js';
 import { isResponseVM } from '../../../common/model/chatViewModel.js';
 import { Command } from '../../../../../../editor/common/languages.js';
-import { IHarnessChatNavigationService } from '../../volterHarness/volterChatNavigation.js';
 
 const $ = dom.$;
 
@@ -22,10 +21,9 @@ export class ChatCommandButtonContentPart extends Disposable implements IChatCon
 	public readonly domNode: HTMLElement;
 
 	constructor(
-		private readonly commandButton: IChatCommandButton,
-		private readonly context: IChatContentPartRenderContext,
-		@ICommandService private readonly commandService: ICommandService,
-		@IHarnessChatNavigationService private readonly harnessNavigation: IHarnessChatNavigationService
+		commandButton: IChatCommandButton,
+		context: IChatContentPartRenderContext,
+		@ICommandService private readonly commandService: ICommandService
 	) {
 		super();
 
@@ -52,19 +50,11 @@ export class ChatCommandButtonContentPart extends Disposable implements IChatCon
 		button.enabled = enabled;
 
 		// TODO still need telemetry for command buttons
-		this._register(button.onDidClick(() => {
-			this.harnessNavigation.assertInteractive(this.context.element.sessionResource);
-			return this.commandService.executeCommand(command.id, ...(command.arguments ?? []));
-		}));
+		this._register(button.onDidClick(() => this.commandService.executeCommand(command.id, ...(command.arguments ?? []))));
 	}
 
 	hasSameContent(other: IChatProgressRenderableResponseContent): boolean {
 		// No other change allowed for this content type
-		if (other.kind !== 'command') { return false; }
-		if (!this.commandButton.harnessAnswerGroup && !other.harnessAnswerGroup) { return true; }
-		return other.harnessAnswerGroup === this.commandButton.harnessAnswerGroup
-			&& other.command === this.commandButton.command
-			&& (other.additionalCommands?.length ?? 0) === (this.commandButton.additionalCommands?.length ?? 0)
-			&& (other.additionalCommands ?? []).every((command, index) => command === this.commandButton.additionalCommands?.[index]);
+		return other.kind === 'command';
 	}
 }

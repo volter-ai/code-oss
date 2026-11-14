@@ -26,7 +26,6 @@ import { AgentHostAllowSignedOutWhenUsableSettingId } from '../../../../../platf
 import { AGENT_HOST_EXISTING_SESSION_HARNESS_PICKER_ENABLED_CONTEXT_KEY } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { IsSessionsWindowContext } from '../../../../common/contextkeys.js';
 import { ChatContextKeyExprs, ChatContextKeys } from '../../common/actions/chatContextKeys.js';
-import { IHarnessChatNavigationService } from '../volterHarness/volterChatNavigation.js';
 import { buildCustomAgentHandoffsInfo, getHandoffId, IChatMode, IChatModeService, IChatModes } from '../../common/chatModes.js';
 import { reportChatModeChange } from '../../common/chatModeTelemetry.js';
 import { chatVariableLeader } from '../../common/requestParser/chatParserTypes.js';
@@ -60,7 +59,6 @@ abstract class SubmitAction extends Action2 {
 		const widgetService = accessor.get(IChatWidgetService);
 		const widget = context?.widget ?? widgetService.lastFocusedWidget;
 
-		accessor.get(IHarnessChatNavigationService).assertInteractive(widget?.viewModel?.sessionResource);
 		// Check if there's a pending delegation target
 		const pendingDelegationTarget = widget?.input.pendingDelegationTarget;
 		if (pendingDelegationTarget && pendingDelegationTarget !== AgentSessionProviders.Local) {
@@ -970,7 +968,6 @@ export class CancelAction extends Action2 {
 			return;
 		}
 
-		accessor.get(IHarnessChatNavigationService).assertInteractive(widget.viewModel?.sessionResource);
 		const chatService = accessor.get(IChatService);
 		if (widget.viewModel) {
 			await chatService.cancelCurrentRequestForSession(widget.viewModel.sessionResource, 'cancelAction');
@@ -1149,7 +1146,6 @@ class ExecuteHandoffAction extends Action2 {
 			return { success: false, error: 'No chat widget found. Provide sessionResource or focus a chat widget.' };
 		}
 
-		accessor.get(IHarnessChatNavigationService).assertInteractive(widget.viewModel?.sessionResource);
 		// Resolve the source custom agent whose handoffs we search (case-insensitive)
 		let sourceMode: IChatMode | undefined;
 		if (arg.sourceCustomAgent) {
