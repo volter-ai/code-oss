@@ -141,6 +141,28 @@ rebase onto a newer Code-OSS can redo them as a checklist:
 - **A chat list row reports its new height on the next animation frame** (`chatListRenderer.ts`).
 - **The built-in agent host is off**: `VolterAgentHostEnablementService` (`volterHarness/volterChat.services.ts`),
   registered in place of `AgentHostEnablementService` from `workbench.web.main.ts`.
+- **A session's content is read-only in its provider's words, and is asked for again on its provider's change**
+  (proposal `chatSessionsProvider`; volter-ai/code-oss#40, FK1). The proposal's `ChatSession.readOnlyMessage` and
+  `ChatSessionContentProvider.onDidChangeChatSessionContent` (`src/vscode-dts/vscode.proposed.chatSessionsProvider.d.ts`).
+  - `extHost.protocol.ts`: `$onDidChangeChatSessionContent`, `$refreshChatSessionContent` and
+    `IChatSessionContentRefreshDto`.
+  - `extHostChatSessions.ts`: the provider's change event is forwarded. `$refreshChatSessionContent` asks the provider
+    again with the held session's own input state and replaces its content.
+  - `mainThreadChatSessions.ts`: a held session's content is asked for again on that event, into its
+    `ObservableChatSession` (`isReadOnly`, `readOnlyMessage`, `refreshContent`).
+  - `readOnlyMessage` on `IChatSession` (`chatSessionsService.ts`), the model store's entry (`chatModelStore.ts`),
+    `IChatModel` (`chatModel.ts`, and `mockChatModel.ts`) and `chatServiceImpl.ts`'s session load.
+  - `ChatReadOnlyBanner.setMessage` (`chatReadOnlyBanner.ts`), set by `chatWidget.ts` from the model's
+    `readOnlyMessage`.
+  - A content with no `requestHandler` is read-only, as the proposal says. The workbench keeps no open gate of its own,
+    and `volter.chat.sessionGateCapability` (`volterHarness/volterChat.ts`) answers `{ version: 1 }` so a provider knows
+    it.
+- **A session's previous input states are disposed after its new content arrives, never the one handed to it**
+  (`extHostChatSessions.ts` `$provideChatSessionContent`: `_disposeInputStatesForResource(…, inputState)` in a
+  `finally` around `provideChatSessionContent`; volter-ai/code-oss#40).
+- **A widget locked to an agent inserts no mention of it** (`chatInputEditorContrib.ts`: a suggestion of the widget's
+  own `lockedAgentId` is skipped, for any agent; volter-ai/code-oss#40, FK2, in place of `patchHarnessDraftAgentMention`'s
+  Supercode-only rule).
 
 Build edits a rebase also redoes:
 
@@ -161,12 +183,8 @@ overlay can drop it.
 
 | Commit | Overlay function | Files |
 |---|---|---|
-| `aef57c2e0968` | `patchHarnessMoveActions` | `src/vs/workbench/contrib/chat/browser/actions/chatMoveActions.ts` |
-| `619a7760a07c` | `patchHarnessPassiveViews` | `src/vs/workbench/contrib/chat/browser/actions/chatElicitationActions.ts`, `src/vs/workbench/contrib/chat/browser/actions/chatExecuteActions.ts`, `src/vs/workbench/contrib/chat/browser/actions/chatToolActions.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatContentParts/chatCommandContentPart.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatReadOnlyBanner.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatWidget.ts` |
-| `f95416c09cdc` | `patchHarnessDraftAgentMention` | `src/vs/workbench/contrib/chat/browser/widget/input/editor/chatInputEditorContrib.ts` |
-| `280edb3510b8` | `patchHarnessChatNavigation` | `src/vs/workbench/browser/parts/editor/editorGroupView.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatWidgetService.ts`, `src/vs/workbench/contrib/chat/browser/widgetHosts/editor/chatEditor.ts`, `src/vs/workbench/contrib/chat/browser/widgetHosts/viewPane/chatViewPane.ts` |
 | `6b84ccf6fdc8` | `patchChatSetupWelcome` | `src/vs/workbench/contrib/chat/browser/viewsWelcome/chatViewWelcomeController.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatWidget.ts` |
-| `298969b7204a` | `patchNativeChat` | `src/vs/workbench/api/common/extHostChatSessions.ts`, `src/vs/workbench/api/common/extHostTypeConverters.ts`, `src/vs/workbench/contrib/chat/browser/actions/chatNewActions.ts`, `src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupContributions.ts`, `src/vs/workbench/contrib/chat/browser/chatStatus/chatStatusEntry.ts`, `src/vs/workbench/contrib/chat/browser/viewsWelcome/chatViewWelcomeController.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatContentParts/chatCommandContentPart.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatContentParts/chatConfirmationContentPart.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatListRenderer.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatWidget.ts`, `src/vs/workbench/contrib/chat/common/chatService/chatService.ts`, `src/vs/workbench/contrib/chat/common/chatService/chatServiceImpl.ts`, `src/vs/workbench/contrib/chat/common/widget/annotations.ts`, `src/vs/workbench/workbench.web.main.ts`, `src/vscode-dts/vscode.proposed.chatSessionsProvider.d.ts` |
+| `298969b7204a` | `patchNativeChat` | `src/vs/workbench/api/common/extHostChatSessions.ts`, `src/vs/workbench/api/common/extHostTypeConverters.ts`, `src/vs/workbench/contrib/chat/browser/actions/chatNewActions.ts`, `src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupContributions.ts`, `src/vs/workbench/contrib/chat/browser/chatStatus/chatStatusEntry.ts`, `src/vs/workbench/contrib/chat/browser/viewsWelcome/chatViewWelcomeController.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatContentParts/chatCommandContentPart.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatContentParts/chatConfirmationContentPart.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatListRenderer.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatWidget.ts`, `src/vs/workbench/contrib/chat/common/chatService/chatServiceImpl.ts`, `src/vs/workbench/workbench.web.main.ts`, `src/vscode-dts/vscode.proposed.chatSessionsProvider.d.ts` |
 | `cbc04426ae16` | `patchExtensionSignatures` | `src/vs/platform/extensionManagement/node/extensionManagementService.ts` |
 | `5413df879fca` | `patchOptionalVsda` | `src/vs/base/common/product.ts`, `src/vs/platform/sign/browser/signService.ts` |
 | `d4d947da70db` | `patchRehCopilotShim` | `build/gulpfile.reh.ts` |
@@ -174,6 +192,13 @@ overlay can drop it.
 | `a36ad3ad2dad` | `patchNpmDirs` | `build/npm/dirs.ts` |
 | `aede13df14f0` | `main()` inline: vscode-api-tests out of the dev compile | `build/gulpfile.extensions.ts` |
 | `cc13aa989177` | `harnessChatSources`: Volter's harness Chat modules, beside the patches that import them | `src/vs/workbench/contrib/chat/browser/volterHarness/**`, the eight chat-patch files' imports, `src/vs/workbench/workbench.common.main.ts`, `build/gulpfile.vscode.web.ts` |
+
+**Reverted by volter-ai/code-oss#40 (FK1), not to be redone on a rebase:** `aef57c2e0968` (`patchHarnessMoveActions`),
+`619a7760a07c` (`patchHarnessPassiveViews`), `f95416c09cdc` (`patchHarnessDraftAgentMention`) and `280edb3510b8`
+(`patchHarnessChatNavigation`, with `volterHarness/volterChatNavigation.ts`): the workbench's own gates on a conversation's
+open and its passive views, which the session provider now owns (above). `298969b7204a` (`patchNativeChat`) no longer
+carries the harness answer group (`harnessAnswerGroup` in `chatService.ts`, `annotations.ts`, `extHostTypeConverters.ts`
+and `chatCommandContentPart.ts`), which #40 removes (FK2).
 
 The chat patches import Volter's harness Chat modules from
 `src/vs/workbench/contrib/chat/browser/volterHarness/` (`harnessChatSources`), in this repository.
