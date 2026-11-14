@@ -87,6 +87,13 @@ registerAction2(class extends Action2 {
 	run() { return { version: 1 }; }
 });
 
+// Versioned support for `volter.chat.send`, as `volter.chat.inTurnApprovalCapability` declares its own: a caller asks
+// it before relying on the send's answer, and an older workbench, which has neither, answers neither.
+registerAction2(class extends Action2 {
+	constructor() { super({ id: 'volter.chat.sendCapability', title: localize2('sendCapability', 'Native Send Capability'), f1: false }); }
+	run() { return { version: 1 }; }
+});
+
 // A PROMPT SENT AS CHAT'S OWN COMPOSER SENDS IT, answered with Code-OSS's own answer: `IChatWidget.acceptInput`, which
 // resolves once the request has been sent (its response model), or with `undefined` where the composer kept it, and
 // rejects where the send failed. A session provider that refuses a send by cancelling it (a cancellation error)
