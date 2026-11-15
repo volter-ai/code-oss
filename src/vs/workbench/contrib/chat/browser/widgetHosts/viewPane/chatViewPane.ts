@@ -1472,6 +1472,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	private async clear(): Promise<void> {
 		// Cancel any in-flight loadSession call to prevent it from
 		// overwriting the fresh session we are about to create.
+		this.latestLoad = 'a new chat';
 		this.loadSessionCts.value?.cancel();
 
 		// Grab the widget's latest view state because it will be loaded back into the widget
@@ -1482,7 +1483,39 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		this.updateActions();
 	}
 
+	/** Volter: what the view was last asked to show, in words, for a load it superseded (`loadSessionAnswered`). */
+	private latestLoad = '';
+
+	/**
+	 * Volter: the view's own answer to one load, said: the conversation bound, or why not. `loadSession` answers only a
+	 * model: `undefined` where a later load (or a new chat, or the view's closing) superseded it, as "the last call wins",
+	 * and an empty session it bound where the load failed. A caller that needs the conversation it asked for waits on
+	 * this rather than reading the widget.
+	 */
+	async loadSessionAnswered(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason): Promise<{ readonly bound: IChatModel } | { readonly refused: string }> {
+		const outcome: { failed?: string } = {};
+		const model = await this.doLoadSession(sessionResource, sessionTypeSelectionReason, outcome);
+		if (outcome.failed !== undefined) { return { refused: outcome.failed }; }
+		if (!model && this.closed) { return { refused: `The Chat view closed before ${sessionResource.toString()} opened.` }; }
+		if (!model) { return { refused: `Chat was asked for ${this.latestLoad} after ${sessionResource.toString()}, which superseded it.` }; }
+		if (!isEqual(model.sessionResource, sessionResource)) { return { refused: `Chat showed ${model.sessionResource.toString()} in place of ${sessionResource.toString()}.` }; }
+		return { bound: model };
+	}
+
 	async loadSession(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason): Promise<IChatModel | undefined> {
+		return this.doLoadSession(sessionResource, sessionTypeSelectionReason);
+	}
+
+	/** Volter: the view closed; a load in flight ends with it (its token cancelled) and is answered so. */
+	private closed = false;
+
+	override dispose(): void {
+		this.closed = true;
+		this.loadSessionCts.value?.cancel();
+		super.dispose();
+	}
+
+	private async doLoadSession(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason, outcome?: { failed?: string }): Promise<IChatModel | undefined> {
 		const t0 = Date.now();
 		this.logService.trace(`[ChatViewPane] loadSession start uri=${sessionResource.toString()}`);
 
@@ -1492,6 +1525,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		const inputBeforeLoad = this._widget?.getInput() ?? '';
 
 		// Cancel any in-flight loadSession call so the last one always wins
+		this.latestLoad = `the conversation ${sessionResource.toString()}`;
 		this.loadSessionCts.value?.cancel();
 		const cts = this.loadSessionCts.value = new CancellationTokenSource();
 		const token = cts.token;
@@ -1536,6 +1570,8 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				}
 
 				const localFallbackSelectionReason = getLocalFallbackSessionTypeSelectionReason(getChatSessionType(sessionResource), !!newModelRef);
+				// (no session came back: the view shows a new one in its place, which the caller is told)
+				if (!newModelRef && outcome) { outcome.failed = `Chat could not load ${sessionResource.toString()} (no ${getChatSessionType(sessionResource)} session provider answered for it), so it showed a new chat instead.`; }
 				const result = await this.showModel(token, newModelRef, true, false, inputBeforeLoad, localFallbackSelectionReason);
 				this.logService.trace(`[ChatViewPane] loadSession done total=${Date.now() - t0}ms uri=${sessionResource.toString()}`);
 				return result;
@@ -1551,7 +1587,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				// Recover by starting a fresh empty session so the widget
 				// is not left in a broken state without title or back button.
 				this.logService.error(`Failed to load chat session '${sessionResource.toString()}'`, err);
-				this.notificationService.error(localize('chat.loadSessionFailed', "Failed to open chat session: {0}", toErrorMessage(err)));
+				const failed = localize('chat.loadSessionFailed', "Failed to open chat session: {0}", toErrorMessage(err));
+				if (outcome) { outcome.failed = failed; }
+				this.notificationService.error(failed);
 				const localFallbackSelectionReason = getLocalFallbackSessionTypeSelectionReason(getChatSessionType(sessionResource), didAcquireSession);
 				const result = await this.showModel(token, undefined, true, false, inputBeforeLoad, localFallbackSelectionReason);
 				this.logService.trace(`[ChatViewPane] loadSession done total=${Date.now() - t0}ms uri=${sessionResource.toString()} error=true`);

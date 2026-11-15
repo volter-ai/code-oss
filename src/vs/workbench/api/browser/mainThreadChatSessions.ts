@@ -325,7 +325,8 @@ export class ObservableChatSession extends Disposable implements IChatSession {
 			}
 
 		} catch (error) {
-			this._logService.error(`Failed to initialize chat session ${this.sessionResource}:`, error);
+			// (Volter: a load a later one superseded is cancelled, not failed)
+			if (!isCancellationError(error)) { this._logService.error(`Failed to initialize chat session ${this.sessionResource}:`, error); }
 			throw error;
 		}
 	}
@@ -1039,7 +1040,7 @@ export class MainThreadChatSessions extends Disposable implements MainThreadChat
 			return session;
 		} catch (error) {
 			session.dispose();
-			this._logService.error(`Error providing chat session content for handle ${providerHandle} and resource ${sessionResource.toString()}:`, error);
+			if (!isCancellationError(error)) { this._logService.error(`Error providing chat session content for handle ${providerHandle} and resource ${sessionResource.toString()}:`, error); }
 			throw error;
 		}
 	}
