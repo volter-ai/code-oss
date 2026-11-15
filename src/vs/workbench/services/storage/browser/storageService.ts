@@ -434,7 +434,7 @@ class HttpStorageDatabase extends Disposable implements IIndexedDBStorageDatabas
 		const remove = [...this.unwrittenDeletes];
 		this.unwrittenInserts.clear();
 		this.unwrittenDeletes.clear();
-		if (remove.length === 0 && Object.keys(insert).length === 0) {
+		if (remove.length === 0 && Object.keys(insert).length === 0 && !closing) {
 			return;
 		}
 		const refused = (why: string) => {
@@ -457,7 +457,9 @@ class HttpStorageDatabase extends Disposable implements IIndexedDBStorageDatabas
 				method: 'POST',
 				credentials: 'same-origin',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ insert, delete: remove, writer: this.writer, sequence: ++this.sequence }),
+				// (the close's write says it is this window's last, so the URL can let go of the window's numbering once every
+				// earlier write of it has arrived)
+				body: JSON.stringify({ insert, delete: remove, writer: this.writer, sequence: ++this.sequence, ...(closing ? { closing: true } : {}) }),
 				// A write started while the page unloads still reaches the server.
 				keepalive: true,
 			});
