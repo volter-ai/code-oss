@@ -451,10 +451,9 @@ class InputEditorSlashCommandMode extends Disposable {
 	}
 
 	private async repopulateAgentCommand(agent: IChatAgentData, slashCommand: IChatAgentCommand | undefined) {
-		// This participant routes the whole session. Its name can change after the
-		// draft's picker; inserting the previous name leaves a misleading mention.
-		if (!slashCommand && agent.id === 'supercode' && this.widget.lockedAgentId === 'supercode'
-			&& this.widget.viewModel?.sessionResource.scheme === 'supercode') { return; }
+		// A widget locked to this agent is routed to it whole: its mention says nothing, and an agent whose name changes
+		// after the draft's picker would leave a stale one.
+		if (!slashCommand && agent.id === this.widget.lockedAgentId) { return; }
 		// Make sure we don't repopulate if the user already has something in the input
 		if (this.widget.inputEditor.getValue().trim()) {
 			return;

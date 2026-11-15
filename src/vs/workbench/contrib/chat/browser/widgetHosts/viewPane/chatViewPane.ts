@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/chatViewPane.css';
-import { HarnessChatNavigationPermit, IHarnessChatNavigationService } from '../../volterHarness/volterChatNavigation.js';
 import { $, addDisposableListener, append, EventHelper, EventType, getWindow, setVisibility } from '../../../../../../base/browser/dom.js';
 import { StandardMouseEvent } from '../../../../../../base/browser/mouseEvent.js';
 import { Button } from '../../../../../../base/browser/ui/button/button.js';
@@ -1363,24 +1362,19 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		return raceCancellationError(this.extensionService.whenInstalledExtensionsRegistered().then(() => undefined), token);
 	}
 
-	private async showModel(token: CancellationToken, modelRef?: IChatModelReference | undefined, startNewSession = true, ignoreTransferredSession = false, inputBeforeLoad?: string, localFallbackSelectionReason?: SessionTypeSelectionReason, retainOutgoingModel = false): Promise<IChatModel | undefined> {
+	private async showModel(token: CancellationToken, modelRef?: IChatModelReference | undefined, startNewSession = true, ignoreTransferredSession = false, inputBeforeLoad?: string, localFallbackSelectionReason?: SessionTypeSelectionReason): Promise<IChatModel | undefined> {
 		const oldModelResource = this._widget.viewModel?.sessionResource;
 		if (oldModelResource) {
 			this.widgetViewStates.set(getComparisonKey(oldModelResource), this._widget.getViewState());
 		}
-		// Keep the outgoing holder alive during this owned draft's lock wait.
-		// The new reference stays local until the widget actually binds it.
-		let ref: IChatModelReference | undefined = startNewSession ? modelRef : undefined;
-		let referenceTransferred = false;
-		try {
-		if (!retainOutgoingModel) { this.modelRef.value = undefined; }
+		this.modelRef.value = undefined;
 
 		// Baseline draft for preserving text typed during loading. `loadSession`
 		// opens its load window before calling us, so it passes its own baseline;
 		// otherwise this call's own await is the load window. See #325323.
 		const baselineInput = inputBeforeLoad ?? this._widget?.getInput() ?? '';
 
-		// The candidate is owned by the outer lifetime finally until transfer.
+		let ref: IChatModelReference | undefined;
 		if (startNewSession) {
 			if (modelRef) {
 				ref = modelRef;
@@ -1397,18 +1391,18 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		}
 
 		if (token.isCancellationRequested) {
-			if (!retainOutgoingModel) { ref?.dispose(); }
+			ref?.dispose();
 			return undefined;
 		}
 
-		if (!retainOutgoingModel) { this.modelRef.value = ref; referenceTransferred = true; }
+		this.modelRef.value = ref;
 		const model = ref?.object;
 
 		if (model) {
-			await this.updateWidgetLockState(getChatSessionType(model.sessionResource), retainOutgoingModel ? token : undefined); // Update widget lock state based on session type
+			await this.updateWidgetLockState(getChatSessionType(model.sessionResource)); // Update widget lock state based on session type
 
 			if (token.isCancellationRequested) {
-				if (!retainOutgoingModel && this.modelRef.value === ref) { this.modelRef.value = undefined; }
+				this.modelRef.value = undefined;
 				return undefined;
 			}
 
@@ -1424,13 +1418,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			}
 		} else {
 			this._widget.setModel(model);
-		}
-
-		if (retainOutgoingModel) {
-			// Binding is synchronous and token-checked above. Release the old
-			// holder only after its widget no longer observes that model.
-			this.modelRef.value = ref;
-			referenceTransferred = true;
 		}
 
 		// Update title control
@@ -1454,15 +1441,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		}
 
 		return model;
-		} finally {
-			// A cancelled/failed opening owns only this local candidate. Never
-			// clear the shared holder, which a newer load may have replaced.
-			if (retainOutgoingModel && !referenceTransferred) { ref?.dispose(); }
-		}
 	}
 
-	private async updateWidgetLockState(sessionType: string, openingToken?: CancellationToken): Promise<void> {
-		if (openingToken?.isCancellationRequested) { return; }
+	private async updateWidgetLockState(sessionType: string): Promise<void> {
 		if (sessionType === localChatSessionType) {
 			this._widget.unlockFromCodingAgent();
 			return;
@@ -1475,8 +1456,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			this.logService.warn(`Failed to resolve chat session type '${sessionType}' for locking`, error);
 		}
 
-		// An older resolver must not change the composer selected by a newer load.
-		if (openingToken?.isCancellationRequested) { return; }
 		if (!canResolve) {
 			this._widget.unlockFromCodingAgent();
 			return;
@@ -1503,16 +1482,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		this.updateActions();
 	}
 
-	async loadSession(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason, permit?: HarnessChatNavigationPermit, openingToken?: CancellationToken): Promise<IChatModel | undefined> {
-		// Keep refusal outside the load's cancellation, clear timer and empty-model recovery.
-		return this.instantiationService.invokeFunction(accessor => accessor.get(IHarnessChatNavigationService).run(sessionResource, async navigationPermit => {
-			const model = await this.loadSessionAfterGuard(sessionResource, sessionTypeSelectionReason, openingToken);
-			if (navigationPermit && model?.sessionResource.toString() !== sessionResource.toString()) { throw new Error('The requested conversation was not selected by the native Chat view.'); }
-			return model;
-		}, permit));
-	}
-
-	private async loadSessionAfterGuard(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason, openingToken?: CancellationToken): Promise<IChatModel | undefined> {
+	async loadSession(sessionResource: URI, sessionTypeSelectionReason?: SessionTypeSelectionReason): Promise<IChatModel | undefined> {
 		const t0 = Date.now();
 		this.logService.trace(`[ChatViewPane] loadSession start uri=${sessionResource.toString()}`);
 
@@ -1523,7 +1493,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 		// Cancel any in-flight loadSession call so the last one always wins
 		this.loadSessionCts.value?.cancel();
-		const cts = this.loadSessionCts.value = new CancellationTokenSource(openingToken);
+		const cts = this.loadSessionCts.value = new CancellationTokenSource();
 		const token = cts.token;
 
 		// Wait for any in-progress session restore (e.g. from onDidChangeAgents)
@@ -1543,10 +1513,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 			// A delay here to avoid blinking because only Cloud sessions are slow, most others are fast
 			const clearWidget = disposableTimeout(() => {
-				// This opening already owns an untitled draft. Keep the outgoing model
-				// until binding, rather than publishing an unrelated empty focus event.
-				// Explicit user clear/new loads still cancel through loadSessionCts.
-				if (openingToken && sessionResource.scheme === 'supercode' && sessionResource.path.startsWith('/untitled-')) { return; }
 				// Only clear the current model if this loadSession call is still the active one
 				// and has not been cancelled. This preserves the "last call wins" behavior.
 				if (token.isCancellationRequested || this.loadSessionCts.value !== cts) {
@@ -1570,8 +1536,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				}
 
 				const localFallbackSelectionReason = getLocalFallbackSessionTypeSelectionReason(getChatSessionType(sessionResource), !!newModelRef);
-				const result = await this.showModel(token, newModelRef, true, false, inputBeforeLoad, localFallbackSelectionReason,
-					!!openingToken && sessionResource.scheme === 'supercode' && sessionResource.path.startsWith('/untitled-'));
+				const result = await this.showModel(token, newModelRef, true, false, inputBeforeLoad, localFallbackSelectionReason);
 				this.logService.trace(`[ChatViewPane] loadSession done total=${Date.now() - t0}ms uri=${sessionResource.toString()}`);
 				return result;
 			} catch (err) {
