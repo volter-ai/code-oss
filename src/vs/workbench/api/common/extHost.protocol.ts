@@ -2406,6 +2406,9 @@ export interface ExtHostDocumentsShape {
 
 export interface ExtHostDocumentSaveParticipantShape {
 	$participateInSave(resource: UriComponents, reason: SaveReason): Promise<boolean[]>;
+	/** The listeners of `resource`'s last save, each by its extension and how long it took (`null` for one still
+	 *  running): who held a save the main thread gave up on. Forgotten once asked. */
+	$lastSaveListeners(resource: UriComponents): Promise<{ readonly extension: string; readonly ms: number | null }[]>;
 }
 
 export interface ITextEditorAddData {

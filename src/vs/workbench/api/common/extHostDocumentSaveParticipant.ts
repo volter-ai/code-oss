@@ -16,6 +16,7 @@ import { LinkedList } from '../../../base/common/linkedList.js';
 import { ILogService } from '../../../platform/log/common/log.js';
 import { IExtensionDescription } from '../../../platform/extensions/common/extensions.js';
 import { SerializableObjectWithBuffers } from '../../services/extensions/common/proxyIdentifier.js';
+import { ResourceMap } from '../../../base/common/map.js';
 
 type Listener = [Function, unknown, IExtensionDescription];
 
@@ -23,6 +24,8 @@ export class ExtHostDocumentSaveParticipant implements ExtHostDocumentSavePartic
 
 	private readonly _callbacks = new LinkedList<Listener>();
 	private readonly _badListeners = new WeakMap<Function, number>();
+	/** Each resource's last save: its listeners, by extension, and how long each took (one entry a resource saved). */
+	private readonly _lastSaves = new ResourceMap<{ extension: string; ms: number | null }[]>();
 
 	constructor(
 		private readonly _logService: ILogService,
@@ -55,6 +58,9 @@ export class ExtHostDocumentSaveParticipant implements ExtHostDocumentSavePartic
 		const didTimeoutHandle = setTimeout(() => didTimeout = true, this._thresholds.timeout);
 
 		const results: boolean[] = [];
+		// (each listener timed, by its extension, so a save the main thread gave up on can be named: `$lastSaveListeners`)
+		const heard: { extension: string; ms: number | null }[] = [];
+		this._lastSaves.set(resource, heard);
 		try {
 			for (const listener of [...this._callbacks]) { // copy to prevent concurrent modifications
 				if (didTimeout) {
@@ -63,13 +69,24 @@ export class ExtHostDocumentSaveParticipant implements ExtHostDocumentSavePartic
 				}
 				const document = this._documents.getDocument(resource);
 
+				const timed = { extension: listener[2].identifier.value, ms: null as number | null };
+				heard.push(timed);
+				const t1 = Date.now();
 				const success = await this._deliverEventAsyncAndBlameBadListeners(listener, { document, reason: TextDocumentSaveReason.to(reason) });
+				timed.ms = Date.now() - t1;
 				results.push(success);
 			}
 		} finally {
 			clearTimeout(didTimeoutHandle);
 		}
 		return results;
+	}
+
+	async $lastSaveListeners(data: UriComponents): Promise<{ readonly extension: string; readonly ms: number | null }[]> {
+		const resource = URI.revive(data);
+		const heard = this._lastSaves.get(resource) ?? [];
+		this._lastSaves.delete(resource);
+		return heard;
 	}
 
 	private _deliverEventAsyncAndBlameBadListeners([listener, thisArg, extension]: Listener, stubEvent: Pick<vscode.TextDocumentWillSaveEvent, 'document' | 'reason'>): Promise<boolean> {
