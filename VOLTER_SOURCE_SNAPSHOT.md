@@ -194,15 +194,11 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `abstractRemoteAgentService.ts`, and the test double in `editorRemoteAgentHostServiceClient.test.ts`) gives the channel
   on the connection as it is, whose calls are written at once, so what a page says at `onBeforeShutdown` is on the
   connection before the extension service's Disconnect at `onWillShutdown`.
-- **A conversation is opened on the Chat view's own answer to its load** (EGG21). `ChatViewPane.loadSessionAnswered`
-  (`widgetHosts/viewPane/chatViewPane.ts`) answers one load as the view settles it: bound to the conversation, or refused
-  in words where a later load or a new chat superseded it ("the last call wins"), where the load failed (the view's
-  own "Failed to open chat session: …", or no session came back and the view showed a new chat), or where the view
-  closed (its `dispose` now cancels a load in flight). `loadSession` is unchanged for its other callers.
-  `volter.chat.openSession` and `volter.chat.send`'s named conversation (`volterHarness/volterChat.ts`,
-  `openConversation`) wait on that answer, never on the widget a load leaves behind. A superseded load's cancellation
-  is not logged as an error (`api/browser/mainThreadChatSessions.ts`, both of its session-content catches skip
-  `isCancellationError`, as its own option handler already does).
+- **A conversation is opened on the Chat view's own answer to its load** (EGG21). `volter.chat.openSession` and
+  `volter.chat.send`'s named conversation (`volterHarness/volterChat.ts`, `openConversation`) wait on
+  `ChatViewPane.loadSession`'s own return (unchanged from upstream), never on the widget a load leaves behind. A
+  superseded load's cancellation is not logged as an error (`api/browser/mainThreadChatSessions.ts`, both of its
+  session-content catches skip `isCancellationError`, as its own option handler already does).
   `api/test/browser/mainThreadChatSessions.test.ts`'s two proxy doubles carry #40's `$refreshChatSessionContent`, which
   `ExtHostChatSessionsShape` requires since #40.
 

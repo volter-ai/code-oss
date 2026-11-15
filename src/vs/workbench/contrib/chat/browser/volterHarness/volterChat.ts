@@ -9,6 +9,7 @@
 
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { isEqual } from '../../../../../base/common/resources.js';
 import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { isCancellationError } from '../../../../../base/common/errors.js';
 import { localize2 } from '../../../../../nls.js';
@@ -27,11 +28,11 @@ import { isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import './media/panel-states.css';
 
 /**
- * A CONVERSATION OPENED IN NATIVE CHAT, answered by the Chat view's own answer to its load
- * (`ChatViewPane.loadSessionAnswered`): bound to the conversation, or refused in words where a later load superseded
- * it, the load failed, or the view closed. One already shown (in the view or an editor) is revealed as
- * `IChatWidgetService.openSession` reveals it. The widget a load leaves behind is never read as its answer: it is
- * whatever the view shows by the time it is read.
+ * A CONVERSATION OPENED IN NATIVE CHAT, answered by the Chat view's own `loadSession`: the model it bound, which is the
+ * conversation asked for, or none where a later load superseded it ("the last call wins"), or another (a new chat)
+ * where the load failed, which the view says in its own notification. One already shown (in the view or an editor) is
+ * revealed as `IChatWidgetService.openSession` reveals it. The widget a load leaves behind is never read as its answer:
+ * it is whatever the view shows by the time it is read.
  */
 async function openConversation(accessor: ServicesAccessor, resource: URI): Promise<IChatWidget> {
 	const widgets = accessor.get(IChatWidgetService);
@@ -42,8 +43,12 @@ async function openConversation(accessor: ServicesAccessor, resource: URI): Prom
 	}
 	const chatView = await views.openView<ChatViewPane>(ChatViewId, true);
 	if (!chatView) { throw new Error(`The Chat view did not open, so ${resource.toString()} was not opened.`); }
-	const answer = await chatView.loadSessionAnswered(resource);
-	if ('refused' in answer) { throw new Error(answer.refused); }
+	const model = await chatView.loadSession(resource);
+	if (!model || !isEqual(model.sessionResource, resource)) {
+		throw new Error(model
+			? `Chat could not load ${resource.toString()} and showed a new chat in its place.`
+			: `Chat was asked for another conversation or a new chat before ${resource.toString()} opened, which superseded it.`);
+	}
 	chatView.focusInput();
 	return chatView.widget;
 }
