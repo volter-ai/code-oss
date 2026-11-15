@@ -17,24 +17,46 @@ import { ICommandService } from '../../../../../platform/commands/common/command
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
-import { ChatViewPaneTarget, IChatWidgetService } from '../chat.js';
+import { ChatViewId, ChatViewPaneTarget, IChatWidget, IChatWidgetService } from '../chat.js';
+import { IViewsService } from '../../../../services/views/common/viewsService.js';
+import { ChatViewPane } from '../widgetHosts/viewPane/chatViewPane.js';
 import { isHarnessApproval } from './volterChatApproval.js';
 import { IChatToolInvocation, IChatToolInvocationSerialized, ToolConfirmKind } from '../../common/chatService/chatService.js';
 import { IChatProgressResponseContent } from '../../common/model/chatModel.js';
 import { isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import './media/panel-states.css';
 
+/**
+ * A CONVERSATION OPENED IN NATIVE CHAT, answered by the Chat view's own answer to its load
+ * (`ChatViewPane.loadSessionAnswered`): bound to the conversation, or refused in words where a later load superseded
+ * it, the load failed, or the view closed. One already shown (in the view or an editor) is revealed as
+ * `IChatWidgetService.openSession` reveals it. The widget a load leaves behind is never read as its answer: it is
+ * whatever the view shows by the time it is read.
+ */
+async function openConversation(accessor: ServicesAccessor, resource: URI): Promise<IChatWidget> {
+	const widgets = accessor.get(IChatWidgetService);
+	const views = accessor.get(IViewsService);
+	if (widgets.getWidgetBySessionResource(resource)) {
+		const shown = await widgets.openSession(resource, ChatViewPaneTarget, { revealIfOpened: true });
+		if (shown) { return shown; }
+	}
+	const chatView = await views.openView<ChatViewPane>(ChatViewId, true);
+	if (!chatView) { throw new Error(`The Chat view did not open, so ${resource.toString()} was not opened.`); }
+	const answer = await chatView.loadSessionAnswered(resource);
+	if ('refused' in answer) { throw new Error(answer.refused); }
+	chatView.focusInput();
+	return chatView.widget;
+}
+
 // The pinned extension API can publish sessions but cannot reveal a specific
-// resource in the sidebar. Keep this bridge limited to the native widget service.
+// resource in the sidebar. Keep this bridge limited to native Chat's own view and widget service.
 registerAction2(class extends Action2 {
 	constructor() { super({ id: 'volter.chat.openSession', title: localize2('openHarnessChat', 'Open Harness Conversation'), f1: false }); }
 	async run(accessor: ServicesAccessor, value: string): Promise<{ resource: string }> {
 		const resource = URI.parse(value);
 		if (resource.scheme !== 'supercode') { throw new Error('Expected a Volter Harness chat session.'); }
-		const widget = await accessor.get(IChatWidgetService).openSession(resource, ChatViewPaneTarget, { revealIfOpened: true });
-		const selected = widget?.viewModel?.sessionResource.toString();
-		if (selected !== resource.toString()) { throw new Error('The requested conversation was not selected.'); }
-		return { resource: selected };
+		await openConversation(accessor, resource);
+		return { resource: resource.toString() };
 	}
 });
 
@@ -96,7 +118,7 @@ registerAction2(class extends Action2 {
 // `workbench.action.chat.open` doesn't await its submit, so a caller of it can only guess from the runtime's state;
 // this answers the send itself. The prompt goes as `cyclotron chat send` gave it, the person's draft kept
 // (`preserveInput`). `resource` names the conversation to send into (opened first, as `volter.chat.openSession`
-// opens it, and refused where the widget that comes back shows another); without one, the focused Chat.
+// opens it, and refused in the Chat view's words where it did not open); without one, the focused Chat.
 registerAction2(class extends Action2 {
 	constructor() { super({ id: 'volter.chat.send', title: localize2('sendHarnessChat', 'Send to Chat'), f1: false }); }
 	async run(accessor: ServicesAccessor, args: { query?: unknown; resource?: unknown } | undefined): Promise<
@@ -104,16 +126,18 @@ registerAction2(class extends Action2 {
 	> {
 		const query = args?.query;
 		if (typeof query !== 'string' || query.trim() === '') { throw new Error('volter.chat.send takes { query, resource? }: the prompt, and the conversation to send it to.'); }
-		const widgets = accessor.get(IChatWidgetService);
 		const named = typeof args?.resource === 'string' ? URI.parse(args.resource) : undefined;
-		const widget = named
-			? await widgets.openSession(named, ChatViewPaneTarget, { revealIfOpened: true })
-			: widgets.lastFocusedWidget;
-		if (!widget) { return { sent: false, why: 'No Chat is open to send the prompt to.' }; }
-		// (the conversation named is the one that opened, as `volter.chat.openSession` checks)
-		if (named && widget.viewModel?.sessionResource.toString() !== named.toString()) {
-			return { sent: false, why: `The conversation ${named.toString()} did not open, so the prompt was not sent.` };
+		let widget: IChatWidget | undefined;
+		if (named) {
+			try {
+				widget = await openConversation(accessor, named);
+			} catch (error) {
+				return { sent: false, why: `${error instanceof Error ? error.message : String(error)} The prompt was not sent.` };
+			}
+		} else {
+			widget = accessor.get(IChatWidgetService).lastFocusedWidget;
 		}
+		if (!widget) { return { sent: false, why: 'No Chat is open to send the prompt to.' }; }
 		// (the composer's own reasons to keep a prompt, named where it can be read before the send)
 		if (widget.input.hasPendingProgrammaticModelSelection) {
 			return { sent: false, why: 'Chat\'s model is still being chosen, so its composer kept the prompt.' };

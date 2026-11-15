@@ -175,6 +175,15 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `flush()` (`IRemoteAgentConnection`, `remoteAgentService.ts`; `abstractRemoteAgentService.ts` and the test double in
   `editorRemoteAgentHostServiceClient.test.ts`), as `end()` writes its Disconnect: Chrome runs no further task of a
   frozen page, and the protocol's writer posts its writes to one.
+- **A conversation is opened on the Chat view's own answer to its load** (EGG21). `ChatViewPane.loadSessionAnswered`
+  (`widgetHosts/viewPane/chatViewPane.ts`) answers one load as the view settles it: bound to the conversation, or refused
+  in words where a later load or a new chat superseded it ("the last call wins"), where the load failed (the view's
+  own "Failed to open chat session: …", or no session came back and the view showed a new chat), or where the view
+  closed (its `dispose` now cancels a load in flight). `loadSession` is unchanged for its other callers.
+  `volter.chat.openSession` and `volter.chat.send`'s named conversation (`volterHarness/volterChat.ts`,
+  `openConversation`) wait on that answer, never on the widget a load leaves behind. A superseded load's cancellation
+  is not logged as an error (`api/browser/mainThreadChatSessions.ts`, both of its session-content catches skip
+  `isCancellationError`, as its own option handler already does).
 
 Build edits a rebase also redoes:
 
