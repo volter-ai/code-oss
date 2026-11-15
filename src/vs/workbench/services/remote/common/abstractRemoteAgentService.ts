@@ -176,6 +176,10 @@ class RemoteAgentConnection extends Disposable implements IRemoteAgentConnection
 	end: () => Promise<void> = () => Promise.resolve();
 	flush: () => void = () => { };
 
+	getConnectedChannel<T extends IChannel>(channelName: string): T | undefined {
+		return this._managementConnection?.client.getChannel<T>(channelName);
+	}
+
 	getChannel<T extends IChannel>(channelName: string): T {
 		return <T>getDelayedChannel(this._getOrCreateConnection().then(c => c.getChannel(channelName)));
 	}

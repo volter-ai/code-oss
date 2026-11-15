@@ -182,6 +182,13 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `flush()` (`IRemoteAgentConnection`, `remoteAgentService.ts`; `abstractRemoteAgentService.ts` and the test double in
   `editorRemoteAgentHostServiceClient.test.ts`), as `end()` writes its Disconnect: Chrome runs no further task of a
   frozen page, and the protocol's writer posts its writes to one.
+- **A window says why it is going before Code-OSS's own Disconnect** (volter-ai/editor's PR 8a review). The web
+  `BrowserLifecycleService` (`services/lifecycle/browser/lifecycleService.ts`) fires `onBeforeShutdown` and
+  `onWillShutdown` with the reason an expected shutdown named (`withExpectedShutdown`, as `BrowserHostService.reload`
+  names `RELOAD`), not always `QUIT`. `IRemoteAgentConnection.getConnectedChannel` (`remoteAgentService.ts`,
+  `abstractRemoteAgentService.ts`, and the test double in `editorRemoteAgentHostServiceClient.test.ts`) gives the channel
+  on the connection as it is, whose calls are written at once, so what a page says at `onBeforeShutdown` is on the
+  connection before the extension service's Disconnect at `onWillShutdown`.
 - **A conversation is opened on the Chat view's own answer to its load** (EGG21). `ChatViewPane.loadSessionAnswered`
   (`widgetHosts/viewPane/chatViewPane.ts`) answers one load as the view settles it: bound to the conversation, or refused
   in words where a later load or a new chat superseded it ("the last call wins"), where the load failed (the view's

@@ -136,8 +136,9 @@ export class BrowserLifecycleService extends AbstractLifecycleService {
 		}
 
 		// Before Shutdown
+		// (Volter: with the reason an expected shutdown named, `withExpectedShutdown`: a reload says it is one)
 		this._onBeforeShutdown.fire({
-			reason: ShutdownReason.QUIT,
+			reason: this.shutdownReason ?? ShutdownReason.QUIT,
 			veto(value, id) {
 				handleVeto(value, id);
 			},
@@ -169,7 +170,7 @@ export class BrowserLifecycleService extends AbstractLifecycleService {
 		// First indicate will-shutdown
 		const logService = this.logService;
 		this._onWillShutdown.fire({
-			reason: ShutdownReason.QUIT,
+			reason: this.shutdownReason ?? ShutdownReason.QUIT,
 			joiners: () => [], 				// Unsupported in web
 			token: CancellationToken.None, 	// Unsupported in web
 			join(promise, joiner) {
