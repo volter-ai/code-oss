@@ -5,7 +5,8 @@
 
 // A Volter editor window's presence, on the window's own management connection to this server, as this server registers
 // its agent host channel (`agentHostProxy`). The window says who it is and its lifecycle on the channel; this server says
-// each of those, and the connection's permanent end, to the Volter session that started it. The connection's end is
+// each of those, and the connection's permanent end, to the Volter session that started it, on the Node IPC channel it
+// was spawned with. The connection's end is
 // the IPC server's own event (`onDidRemoveConnection`), and whether the window said it was going is Code-OSS's own
 // word for that: the Disconnect a web window sends as it shuts down (the extension service's `join.disconnectRemote`,
 // on every shutdown path), which the management connection tells apart from the end of this server's reconnection
@@ -22,9 +23,6 @@ import { generateUuid } from '../../base/common/uuid.js';
 import { URI } from '../../base/common/uri.js';
 
 export const VOLTER_WINDOW_CHANNEL_NAME = 'volterWindow';
-
-/** Where the session that started this server hears its windows: its origin, from the session's own environment. */
-const SESSION_ORIGIN_ENV = 'VOLTER_SESSION_ORIGIN';
 
 /** One report to the session: a window announced, its lifecycle, or its connection gone for good. */
 interface VolterWindowReport {
@@ -51,19 +49,37 @@ export class VolterWindowChannel extends Disposable implements IServerChannel<Re
 		return id;
 	}
 
-	/** The channel, or none where no Volter session started this server (its origin unset). */
-	static create(ipcServer: IPCServer<RemoteAgentConnectionContext>, connectionToken: string | undefined, logService: ILogService): VolterWindowChannel | undefined {
-		const origin = process.env[SESSION_ORIGIN_ENV];
-		return origin ? new VolterWindowChannel(ipcServer, origin, connectionToken, logService) : undefined;
+	/** The channel, or none where no process started this server with a Node IPC channel (`process.send`): the Volter
+	 *  session spawns it with one. */
+	static create(ipcServer: IPCServer<RemoteAgentConnectionContext>, logService: ILogService): VolterWindowChannel | undefined {
+		return process.send ? new VolterWindowChannel(ipcServer, logService) : undefined;
 	}
+
+	/** Each report the session has yet to answer, by its number. */
+	private readonly unanswered = new Map<number, () => void>();
+	private reports = 0;
 
 	private constructor(
 		ipcServer: IPCServer<RemoteAgentConnectionContext>,
-		private readonly origin: string,
-		private readonly connectionToken: string | undefined,
 		private readonly logService: ILogService,
 	) {
 		super();
+		// (the session answers each report once it has taken it, in order; a session gone answers none, so its channel's
+		// end answers them all)
+		const answered = (message: { answered?: number; refused?: string | null }) => {
+			const report = this.unanswered.get(message.answered ?? -1);
+			if (report === undefined) { return; }
+			this.unanswered.delete(message.answered!);
+			if (message.refused) { this.logService.warn(`[volterWindow] the session refused a window's report: ${message.refused}`); }
+			report();
+		};
+		const gone = () => {
+			for (const report of this.unanswered.values()) { report(); }
+			this.unanswered.clear();
+		};
+		process.on('message', answered);
+		process.on('disconnect', gone);
+		this._register({ dispose: () => { process.off('message', answered); process.off('disconnect', gone); } });
 		this._register(ipcServer.onDidRemoveConnection(client => {
 			const connection = this.ids.get(client.ctx);
 			if (connection === undefined || !this.announced.delete(connection)) { return; }
@@ -110,32 +126,18 @@ export class VolterWindowChannel extends Disposable implements IServerChannel<Re
 		}
 	}
 
-	/** The reports in the order they were made: each fetch is its own request, and a window's last lifecycle reaches the
-	 *  session before its connection's end. */
-	private reported: Promise<void> = Promise.resolve();
-
+	/** Said to the session on the Node IPC channel it spawned this server with, whose messages arrive in the order they
+	 *  are sent; answered once the session has taken it. A session that can't be reached is logged in its words: the
+	 *  window's presence is then unknown to it. */
 	private report(report: VolterWindowReport): Promise<void> {
-		this.reported = this.reported.then(() => this.send(report));
-		return this.reported;
-	}
-
-	/** Said to the session (`POST /__editor/windows`). This server is not a page, so it sends no `Origin`: it proves
-	 *  itself as Code-OSS's own server is trusted, by the connection token it already holds, in the `vscode-tkn` cookie
-	 *  the session's gate checks on every request. A session that can't be reached is logged in its words: the window's
-	 *  presence is then unknown to it. */
-	private async send(report: VolterWindowReport): Promise<void> {
-		try {
-			const response = await fetch(new URL('/__editor/windows', this.origin), {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-					...(this.connectionToken ? { cookie: `vscode-tkn=${this.connectionToken}` } : {}),
-				},
-				body: JSON.stringify(report),
+		const id = ++this.reports;
+		return new Promise(resolve => {
+			this.unanswered.set(id, resolve);
+			process.send!({ ...report, id }, undefined, undefined, error => {
+				if (!error || !this.unanswered.delete(id)) { return; }
+				this.logService.warn(`[volterWindow] the session could not be told the window's ${report.event}: ${error.message}`);
+				resolve();
 			});
-			if (!response.ok) { this.logService.warn(`[volterWindow] the session refused the window's ${report.event}: ${response.status} ${await response.text()}`); }
-		} catch (error) {
-			this.logService.warn(`[volterWindow] the session could not be told the window's ${report.event}: ${error instanceof Error ? error.message : String(error)}`);
-		}
+		});
 	}
 }
