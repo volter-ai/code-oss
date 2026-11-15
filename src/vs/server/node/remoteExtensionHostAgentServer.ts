@@ -449,7 +449,7 @@ class RemoteExtensionHostAgentServer extends Disposable implements IServerAPI {
 
 				protocol.sendControl(VSBuffer.fromString(JSON.stringify({ type: 'ok' })));
 				const con = new ManagementConnection(this._logService, reconnectionToken, remoteAddress, protocol, this._reconnectionGraceTime);
-				this._socketServer.acceptConnection(con.protocol, con.onClose);
+				this._socketServer.acceptConnection(con.protocol, con.onClose, () => con.endedByClient);
 				this._managementConnections[reconnectionToken] = con;
 				this._allReconnectionTokens.add(reconnectionToken);
 				con.onClose(() => {

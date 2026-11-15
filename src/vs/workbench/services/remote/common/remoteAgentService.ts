@@ -60,6 +60,9 @@ export interface IRemoteAgentConnection {
 	readonly onDidStateChange: Event<PersistentConnectionEvent>;
 
 	end(): Promise<void>;
+	/** Volter: writes what was said on the connection to its socket now, rather than at the writer's next posted task,
+	 *  for a page that runs no further task (Chrome's `freeze`); `end()` writes its disconnect the same way. */
+	flush(): void;
 	dispose(): void;
 	getChannel<T extends IChannel>(channelName: string): T;
 	withChannel<T extends IChannel, R>(channelName: string, callback: (channel: T) => Promise<R>): Promise<R>;

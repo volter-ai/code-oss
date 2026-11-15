@@ -106,6 +106,7 @@ import { IMcpGalleryManifestService } from '../../platform/mcp/common/mcpGallery
 import { McpGalleryManifestIPCService } from '../../platform/mcp/common/mcpGalleryManifestServiceIpc.js';
 import { SANDBOX_HELPER_CHANNEL_NAME, SandboxHelperChannel } from '../../platform/sandbox/common/sandboxHelperIpc.js';
 import { SandboxHelperService } from '../../platform/sandbox/node/sandboxHelper.js';
+import { VOLTER_WINDOW_CHANNEL_NAME, VolterWindowChannel } from './volterWindowChannel.js';
 
 const eventPrefix = 'monacoworkbench';
 
@@ -395,6 +396,12 @@ export async function setupServerServices(connectionToken: ServerConnectionToken
 		socketServer.registerChannel(NativeMcpDiscoveryHelperChannelName, instantiationService.createInstance(NativeMcpDiscoveryHelperChannel, (ctx: RemoteAgentConnectionContext) => getUriTransformer(ctx.remoteAuthority)));
 		socketServer.registerChannel(McpGatewayChannelName, instantiationService.createInstance(McpGatewayChannel<RemoteAgentConnectionContext>, socketServer));
 
+		// A Volter editor window's presence, on its management connection (`volterWindowChannel.ts`)
+		const volterWindowChannel = VolterWindowChannel.create(socketServer, connectionToken.type === ServerConnectionTokenType.Mandatory ? connectionToken.value : undefined, logService);
+		if (volterWindowChannel) {
+			socketServer.registerChannel(VOLTER_WINDOW_CHANNEL_NAME, disposables.add(volterWindowChannel));
+		}
+
 		const remoteFileSystemChannel = disposables.add(new RemoteAgentFileSystemProviderChannel(logService, environmentService, configurationService));
 		socketServer.registerChannel(REMOTE_FILE_SYSTEM_CHANNEL_NAME, remoteFileSystemChannel);
 
@@ -437,8 +444,8 @@ export class SocketServer<TContext = string> extends IPCServer<TContext> {
 		this._onDidConnectEmitter = emitter;
 	}
 
-	public acceptConnection(protocol: IMessagePassingProtocol, onDidClientDisconnect: Event<void>): void {
-		this._onDidConnectEmitter.fire({ protocol, onDidClientDisconnect });
+	public acceptConnection(protocol: IMessagePassingProtocol, onDidClientDisconnect: Event<void>, endedByClient?: () => boolean): void {
+		this._onDidConnectEmitter.fire({ protocol, onDidClientDisconnect, endedByClient });
 	}
 }
 
