@@ -182,6 +182,11 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `flush()` (`IRemoteAgentConnection`, `remoteAgentService.ts`; `abstractRemoteAgentService.ts` and the test double in
   `editorRemoteAgentHostServiceClient.test.ts`), as `end()` writes its Disconnect: Chrome runs no further task of a
   frozen page, and the protocol's writer posts its writes to one.
+- **A window's whole-file write is said from its own connection** (volter-ai/editor's #881 cut). The file channel
+  (`RemoteAgentFileSystemProviderChannel`, `remoteFileSystemProviderServer.ts`) makes each `writeFile` call through a
+  `writing` hook with the call's connection context; `volterWindowChannel.ts` says `writing` to the session before the
+  write and `wrote` (and whether it landed) after, for a connection whose window announced itself, so the session
+  records the file by that window's participant. Streamed writes (`open`, `write`, `close`) are not said.
 - **A window says why it is going before Code-OSS's own Disconnect** (volter-ai/editor's PR 8a review). The web
   `BrowserLifecycleService` (`services/lifecycle/browser/lifecycleService.ts`) fires `onBeforeShutdown` and
   `onWillShutdown` with the reason an expected shutdown named (`withExpectedShutdown`, as `BrowserHostService.reload`
