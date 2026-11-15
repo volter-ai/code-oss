@@ -397,7 +397,7 @@ export async function setupServerServices(connectionToken: ServerConnectionToken
 		socketServer.registerChannel(McpGatewayChannelName, instantiationService.createInstance(McpGatewayChannel<RemoteAgentConnectionContext>, socketServer));
 
 		// A Volter editor window's presence, on its management connection (`volterWindowChannel.ts`)
-		const volterWindowChannel = VolterWindowChannel.create(socketServer, connectionToken.type === ServerConnectionTokenType.Mandatory ? connectionToken.value : undefined, logService);
+		const volterWindowChannel = VolterWindowChannel.create(socketServer, logService);
 		if (volterWindowChannel) {
 			socketServer.registerChannel(VOLTER_WINDOW_CHANNEL_NAME, disposables.add(volterWindowChannel));
 		}

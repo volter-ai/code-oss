@@ -171,10 +171,10 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   own `lockedAgentId` is skipped, for any agent; volter-ai/code-oss#40, FK2, in place of `patchHarnessDraftAgentMention`'s
   Supercode-only rule).
 - **A Volter editor window's presence travels on its management connection** (`src/vs/server/node/volterWindowChannel.ts`,
-  registered in `serverServices.ts` as the server registers `agentHostProxy`, only where the Volter session that
-  started the server names its origin, `VOLTER_SESSION_ORIGIN`). The window announces itself and its lifecycle on the
+  registered in `serverServices.ts` as the server registers `agentHostProxy`, only where the process that started the
+  server gave it a Node IPC channel, as the Volter session does). The window announces itself and its lifecycle on the
   channel. The server says each, and the connection's permanent end (the IPC server's `onDidRemoveConnection`), to the
-  session's `POST /__editor/windows` with its connection token. Whether the window said it was going is its own
+  session on that IPC channel (`process.send`), which answers each report once it has taken it. Whether the window said it was going is its own
   Disconnect: the management connection marks an end by the client's Disconnect (`ManagementConnection.endedByClient`,
   `remoteExtensionManagement.ts`), `remoteExtensionHostAgentServer.ts` hands that to `SocketServer.acceptConnection`
   (`serverServices.ts`), and the IPC server carries it on its connection (`ClientConnectionEvent` and `Connection`'s
