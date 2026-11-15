@@ -9,6 +9,7 @@
 
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { isEqual } from '../../../../../base/common/resources.js';
 import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
 import { isCancellationError } from '../../../../../base/common/errors.js';
 import { localize2 } from '../../../../../nls.js';
@@ -27,11 +28,12 @@ import { isRequestVM, isResponseVM } from '../../common/model/chatViewModel.js';
 import './media/panel-states.css';
 
 /**
- * A CONVERSATION OPENED IN NATIVE CHAT, answered by the Chat view's own answer to its load
- * (`ChatViewPane.loadSessionAnswered`): bound to the conversation, or refused in words where a later load superseded
- * it, the load failed, or the view closed. One already shown (in the view or an editor) is revealed as
- * `IChatWidgetService.openSession` reveals it. The widget a load leaves behind is never read as its answer: it is
- * whatever the view shows by the time it is read.
+ * A CONVERSATION OPENED IN NATIVE CHAT, answered by the Chat view's own `loadSession`: the model it bound, which is the
+ * conversation asked for, or none where a later load superseded it ("the last call wins"), or another (a new chat)
+ * where the load failed (a provider that threw, which the view also shows in a notification, or no provider that
+ * answered, which only this function's error says). One already shown (in the view or an editor) is revealed as
+ * `IChatWidgetService.openSession` reveals it. The answer is the widget `IChatWidgetService` holds for the conversation
+ * once it loaded, never the view's own widget: a view closed mid-load leaves its widget disposed and unregistered.
  */
 async function openConversation(accessor: ServicesAccessor, resource: URI): Promise<IChatWidget> {
 	const widgets = accessor.get(IChatWidgetService);
@@ -42,10 +44,16 @@ async function openConversation(accessor: ServicesAccessor, resource: URI): Prom
 	}
 	const chatView = await views.openView<ChatViewPane>(ChatViewId, true);
 	if (!chatView) { throw new Error(`The Chat view did not open, so ${resource.toString()} was not opened.`); }
-	const answer = await chatView.loadSessionAnswered(resource);
-	if ('refused' in answer) { throw new Error(answer.refused); }
-	chatView.focusInput();
-	return chatView.widget;
+	const model = await chatView.loadSession(resource);
+	if (!model || !isEqual(model.sessionResource, resource)) {
+		throw new Error(model
+			? `Chat could not load ${resource.toString()} and showed a new chat in its place.`
+			: `Chat was asked for another conversation or a new chat before ${resource.toString()} opened, which superseded it.`);
+	}
+	const widget = widgets.getWidgetBySessionResource(resource);
+	if (!widget) { throw new Error(`Chat loaded ${resource.toString()}, but no Chat widget shows it: the Chat view closed before the load ended.`); }
+	widget.focusInput();
+	return widget;
 }
 
 // The pinned extension API can publish sessions but cannot reveal a specific
@@ -118,7 +126,7 @@ registerAction2(class extends Action2 {
 // `workbench.action.chat.open` doesn't await its submit, so a caller of it can only guess from the runtime's state;
 // this answers the send itself. The prompt goes as `cyclotron chat send` gave it, the person's draft kept
 // (`preserveInput`). `resource` names the conversation to send into (opened first, as `volter.chat.openSession`
-// opens it, and refused in the Chat view's words where it did not open); without one, the focused Chat.
+// opens it, and refused in `openConversation`'s words where it did not open); without one, the focused Chat.
 registerAction2(class extends Action2 {
 	constructor() { super({ id: 'volter.chat.send', title: localize2('sendHarnessChat', 'Send to Chat'), f1: false }); }
 	async run(accessor: ServicesAccessor, args: { query?: unknown; resource?: unknown } | undefined): Promise<
