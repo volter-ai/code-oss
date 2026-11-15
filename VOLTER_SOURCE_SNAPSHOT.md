@@ -184,6 +184,8 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `openConversation`) wait on that answer, never on the widget a load leaves behind. A superseded load's cancellation
   is not logged as an error (`api/browser/mainThreadChatSessions.ts`, both of its session-content catches skip
   `isCancellationError`, as its own option handler already does).
+  `api/test/browser/mainThreadChatSessions.test.ts`'s two proxy doubles carry #40's `$refreshChatSessionContent`, which
+  `ExtHostChatSessionsShape` requires since #40.
 
 Build edits a rebase also redoes:
 
