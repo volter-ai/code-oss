@@ -12,6 +12,7 @@ import { toErrorMessage } from '../../../../base/common/errorMessage.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
+import { generateUuid } from '../../../../base/common/uuid.js';
 import { InMemoryStorageDatabase, isStorageItemsChangeEvent, IStorage, IStorageDatabase, IStorageItemsChangeEvent, IUpdateRequest, Storage } from '../../../../base/parts/storage/common/storage.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { AbstractStorageService, isProfileUsingDefaultStorage, IS_NEW_KEY, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
@@ -456,7 +457,7 @@ class HttpStorageDatabase extends Disposable implements IIndexedDBStorageDatabas
 				method: 'POST',
 				credentials: 'same-origin',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ insert, delete: remove }),
+				body: JSON.stringify({ insert, delete: remove, writer: this.writer, sequence: ++this.sequence }),
 				// A write started while the page unloads still reaches the server.
 				keepalive: true,
 			});
@@ -474,6 +475,12 @@ class HttpStorageDatabase extends Disposable implements IIndexedDBStorageDatabas
 	}
 
 	async optimize(): Promise<void> { }
+
+	/** This window's writes, numbered: the close's write and a write still in flight are two requests in no fixed
+	 *  order, and the URL skips one older than a write of this window it has already applied (its `writer` and
+	 *  `sequence`), so an older write never lands over a newer one. */
+	private readonly writer = generateUuid();
+	private sequence = 0;
 
 	/** The write being made, whose changes are given back if it is refused. */
 	private inFlight: { readonly insert: Record<string, string>; readonly remove: readonly string[] } | undefined;
