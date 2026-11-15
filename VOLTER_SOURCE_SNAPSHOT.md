@@ -121,7 +121,13 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   (`src/vs/workbench/browser/web.api.ts`), passed by `web.main.ts` to `BrowserStorageService`, whose
   `HttpStorageDatabase` (`src/vs/workbench/services/storage/browser/storageService.ts`) implements
   `IIndexedDBStorageDatabase` over `GET`/`POST` of that URL. Used by the editor's `frame-proxy.ts` and the limited
-  view's `boot.ts`.
+  view's `boot.ts`. A write the URL refuses (or that can't reach it) is answered for that write: a warning in the
+  server's words, and its changes are given back, under any made since, for the next write to carry (EGG24). Its close,
+  which `BrowserStorageService.close` (the window's shutdown) now calls for it in every browser, not only Safari, sends
+  at once what is still owed (the write in flight's changes under every change not yet written), and a refusal of that
+  last write is an error, since nothing carries it after. Each write carries the window's `writer` id and a
+  `sequence`, and the URL skips a write older than one of that window it has already applied, so the close's write and
+  one still in flight never land out of order.
 - **An `ObservableMemento` does not echo its own or a sibling's write.**
   `src/vs/platform/observable/common/observableMemento.ts` remembers the stored bytes and ignores a storage event that
   carries them.
