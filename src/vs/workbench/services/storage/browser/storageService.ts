@@ -392,23 +392,50 @@ class HttpStorageDatabase extends Disposable implements IIndexedDBStorageDatabas
 		return { swapped: true, currentValue: newValue };
 	}
 
+	/** The changes not yet written: each write sends them all, and a write the server refuses gives its changes back
+	 *  here, under any made since, so the next write carries them. */
+	private readonly unwrittenInserts = new Map<string, string>();
+	private readonly unwrittenDeletes = new Set<string>();
+
 	updateItems(request: IUpdateRequest): Promise<void> {
-		const insert: Record<string, string> = {};
-		const remove: string[] = [];
+		let changed = false;
 		for (const [key, value] of request.insert ?? []) {
 			this.items.set(key, value);
-			insert[key] = value;
+			this.unwrittenInserts.set(key, value);
+			this.unwrittenDeletes.delete(key);
+			changed = true;
 		}
 		for (const key of request.delete ?? []) {
 			this.items.delete(key);
-			remove.push(key);
+			this.unwrittenInserts.delete(key);
+			this.unwrittenDeletes.add(key);
+			changed = true;
 		}
-		if (remove.length === 0 && Object.keys(insert).length === 0) {
+		if (!changed) {
 			return this.pending;
 		}
 		this.pendingCount++;
 		// Writes are ordered: each one waits for the one before it.
 		this.pending = this.pending.then(async () => {
+			const insert = Object.fromEntries(this.unwrittenInserts);
+			const remove = [...this.unwrittenDeletes];
+			this.unwrittenInserts.clear();
+			this.unwrittenDeletes.clear();
+			if (remove.length === 0 && Object.keys(insert).length === 0) {
+				this.pendingCount--;
+				return;
+			}
+			// (a refused write is answered for that write: said in the server's words, as a warning rather than an error,
+			// since the next write carries its changes; only a change made since replaces one it gives back)
+			const giveBack = (why: string) => {
+				for (const [key, value] of Object.entries(insert)) {
+					if (!this.unwrittenInserts.has(key) && !this.unwrittenDeletes.has(key)) { this.unwrittenInserts.set(key, value); }
+				}
+				for (const key of remove) {
+					if (!this.unwrittenInserts.has(key)) { this.unwrittenDeletes.add(key); }
+				}
+				this.logService.warn(`[storage] ${this.name} did not take a write of ${Object.keys(insert).length + remove.length} change(s), which the next write carries: ${why}`);
+			};
 			try {
 				const response = await fetch(this.name, {
 					method: 'POST',
@@ -419,10 +446,13 @@ class HttpStorageDatabase extends Disposable implements IIndexedDBStorageDatabas
 					keepalive: true,
 				});
 				if (!response.ok) {
-					this.logService.error(`[storage] ${this.name} refused a write (${response.status}).`);
+					const text = await response.text().catch(() => '');
+					let words = text;
+					try { const said = (JSON.parse(text) as { error?: unknown } | null)?.error; if (typeof said === 'string') { words = said; } } catch { /* not JSON: its text */ }
+					giveBack(`it answered ${response.status}${words ? `: ${words}` : ' without saying why'}`);
 				}
 			} catch (error) {
-				this.logService.error(`[storage] ${this.name} could not be written.`, toErrorMessage(error));
+				giveBack(`it could not be reached: ${toErrorMessage(error)}`);
 			} finally {
 				this.pendingCount--;
 			}
