@@ -249,6 +249,11 @@ export class BrowserStorageService extends AbstractStorageService {
 			this.profileStorageDatabase?.close();
 			this.workspaceStorageDatabase?.close();
 		}
+		// (Volter: an embedder's storage URL is closed in every browser: its close sends what it still owes, which no
+		// write after the unload carries)
+		else if (this.workspaceStorageDatabase instanceof HttpStorageDatabase) {
+			void this.workspaceStorageDatabase.close();
+		}
 
 		// Always dispose to ensure that no timeouts or callbacks
 		// get triggered in this phase.
@@ -416,54 +421,79 @@ class HttpStorageDatabase extends Disposable implements IIndexedDBStorageDatabas
 		}
 		this.pendingCount++;
 		// Writes are ordered: each one waits for the one before it.
-		this.pending = this.pending.then(async () => {
-			const insert = Object.fromEntries(this.unwrittenInserts);
-			const remove = [...this.unwrittenDeletes];
-			this.unwrittenInserts.clear();
-			this.unwrittenDeletes.clear();
-			if (remove.length === 0 && Object.keys(insert).length === 0) {
-				this.pendingCount--;
-				return;
-			}
-			// (a refused write is answered for that write: said in the server's words, as a warning rather than an error,
-			// since the next write carries its changes; only a change made since replaces one it gives back)
-			const giveBack = (why: string) => {
-				for (const [key, value] of Object.entries(insert)) {
-					if (!this.unwrittenInserts.has(key) && !this.unwrittenDeletes.has(key)) { this.unwrittenInserts.set(key, value); }
-				}
-				for (const key of remove) {
-					if (!this.unwrittenInserts.has(key)) { this.unwrittenDeletes.add(key); }
-				}
-				this.logService.warn(`[storage] ${this.name} did not take a write of ${Object.keys(insert).length + remove.length} change(s), which the next write carries: ${why}`);
-			};
-			try {
-				const response = await fetch(this.name, {
-					method: 'POST',
-					credentials: 'same-origin',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ insert, delete: remove }),
-					// A write started while the page unloads still reaches the server.
-					keepalive: true,
-				});
-				if (!response.ok) {
-					const text = await response.text().catch(() => '');
-					let words = text;
-					try { const said = (JSON.parse(text) as { error?: unknown } | null)?.error; if (typeof said === 'string') { words = said; } } catch { /* not JSON: its text */ }
-					giveBack(`it answered ${response.status}${words ? `: ${words}` : ' without saying why'}`);
-				}
-			} catch (error) {
-				giveBack(`it could not be reached: ${toErrorMessage(error)}`);
-			} finally {
-				this.pendingCount--;
-			}
-		});
+		this.pending = this.pending.then(() => this.writeUnwritten(false)).finally(() => this.pendingCount--);
 		return this.pending;
+	}
+
+	/** One write of every change not yet written. A refused or unreachable write is answered for that write, in the
+	 *  server's words: while the window lives it is a warning and its changes are given back, under any made since, for
+	 *  the next write to carry; at the close nothing carries them after, so it is an error. */
+	private async writeUnwritten(closing: boolean): Promise<void> {
+		const insert = Object.fromEntries(this.unwrittenInserts);
+		const remove = [...this.unwrittenDeletes];
+		this.unwrittenInserts.clear();
+		this.unwrittenDeletes.clear();
+		if (remove.length === 0 && Object.keys(insert).length === 0) {
+			return;
+		}
+		const refused = (why: string) => {
+			for (const [key, value] of Object.entries(insert)) {
+				if (!this.unwrittenInserts.has(key) && !this.unwrittenDeletes.has(key)) { this.unwrittenInserts.set(key, value); }
+			}
+			for (const key of remove) {
+				if (!this.unwrittenInserts.has(key)) { this.unwrittenDeletes.add(key); }
+			}
+			const count = Object.keys(insert).length + remove.length;
+			if (closing) {
+				this.logService.error(`[storage] ${this.name} did not take the closing window's last write of ${count} change(s), which are lost: ${why}`);
+			} else {
+				this.logService.warn(`[storage] ${this.name} did not take a write of ${count} change(s), which the next write carries: ${why}`);
+			}
+		};
+		this.inFlight = { insert, remove };
+		try {
+			const response = await fetch(this.name, {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ insert, delete: remove }),
+				// A write started while the page unloads still reaches the server.
+				keepalive: true,
+			});
+			if (!response.ok) {
+				const text = await response.text().catch(() => '');
+				let words = text;
+				try { const said = (JSON.parse(text) as { error?: unknown } | null)?.error; if (typeof said === 'string') { words = said; } } catch { /* not JSON: its text */ }
+				refused(`it answered ${response.status}${words ? `: ${words}` : ' without saying why'}`);
+			}
+		} catch (error) {
+			refused(`it could not be reached: ${toErrorMessage(error)}`);
+		} finally {
+			this.inFlight = undefined;
+		}
 	}
 
 	async optimize(): Promise<void> { }
 
+	/** The write being made, whose changes are given back if it is refused. */
+	private inFlight: { readonly insert: Record<string, string>; readonly remove: readonly string[] } | undefined;
+
+	/**
+	 * The window closes (its unload, where no write after this one carries anything and no answer to an earlier one
+	 * arrives in time): what is still owed is sent at once, the write in flight's changes under every change not yet
+	 * written, since that write may yet be refused. A refusal of this last write is an error.
+	 */
 	async close(): Promise<void> {
-		await this.pending;
+		const owed = this.inFlight;
+		if (owed) {
+			for (const [key, value] of Object.entries(owed.insert)) {
+				if (!this.unwrittenInserts.has(key) && !this.unwrittenDeletes.has(key)) { this.unwrittenInserts.set(key, value); }
+			}
+			for (const key of owed.remove) {
+				if (!this.unwrittenInserts.has(key)) { this.unwrittenDeletes.add(key); }
+			}
+		}
+		await this.writeUnwritten(true);
 	}
 
 	async clear(): Promise<void> {
