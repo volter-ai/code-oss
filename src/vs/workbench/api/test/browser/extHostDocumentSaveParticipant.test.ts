@@ -97,7 +97,7 @@ suite('ExtHostDocumentSaveParticipant', () => {
 			sub.dispose();
 
 			const [first] = values;
-			assert.strictEqual(first, false);
+			assert.strictEqual(first.ok, false);
 		});
 	});
 
@@ -233,7 +233,7 @@ suite('ExtHostDocumentSaveParticipant', () => {
 			sub.dispose();
 
 			const [first] = values;
-			assert.strictEqual(first, false);
+			assert.strictEqual(first.ok, false);
 		});
 	});
 
@@ -316,7 +316,7 @@ suite('ExtHostDocumentSaveParticipant', () => {
 			sub.dispose();
 
 			assert.strictEqual(edits, undefined);
-			assert.strictEqual(values[0], false);
+			assert.strictEqual(values[0].ok, false);
 		});
 
 	});

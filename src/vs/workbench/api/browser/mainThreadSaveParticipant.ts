@@ -45,22 +45,19 @@ class ExtHostSaveParticipant implements ITextFileSaveParticipant {
 					if (answered) {
 						return;
 					}
-					// WHICH PARTICIPANT HELD IT, said once the extension host answers: its listeners by extension and time
+					// WHICH PARTICIPANT HELD IT, said from the save's own late answer: its listeners by extension and time
 					const resource = editorModel.resource;
-					participated.then(() => undefined, () => undefined).then(() => {
-						const answeredAfter = Date.now() - asked;
-						return this._proxy.$lastSaveListeners(resource).then(listeners => ({ answeredAfter, listeners }));
-					}).then(({ answeredAfter, listeners }) => {
-						const named = listeners.map(({ extension, ms }) => `'${extension}' ${ms === null ? 'did not finish' : `took ${ms}ms`}`);
+					participated.then(listeners => {
+						const named = listeners.map(({ extension, ms }) => `'${extension}' took ${ms}ms`);
 						this._logService.error(`onWillSaveTextDocument for ${resource.toString()} was aborted after 1750ms; the extension host answered after ` +
-							`${answeredAfter}ms, and its listeners were: ${named.join(', ') || 'none'}`);
+							`${Date.now() - asked}ms, and its listeners were: ${named.join(', ') || 'none'}`);
 					}, () => { /* the extension host went: nothing to name */ });
 				},
 				1750
 			);
 			participated.then(() => { answered = true; }, () => { answered = true; });
 			participated.then(values => {
-				if (!values.every(success => success)) {
+				if (!values.every(({ ok }) => ok)) {
 					return Promise.reject(new Error('listener failed'));
 				}
 				return undefined;
