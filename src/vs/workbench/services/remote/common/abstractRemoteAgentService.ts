@@ -174,6 +174,7 @@ class RemoteAgentConnection extends Disposable implements IRemoteAgentConnection
 	}
 
 	end: () => Promise<void> = () => Promise.resolve();
+	flush: () => void = () => { };
 
 	getChannel<T extends IChannel>(channelName: string): T {
 		return <T>getDelayedChannel(this._getOrCreateConnection().then(c => c.getChannel(channelName)));
@@ -253,6 +254,7 @@ class RemoteAgentConnection extends Disposable implements IRemoteAgentConnection
 			connection.protocol.sendDisconnect();
 			return connection.protocol.drain();
 		};
+		this.flush = () => connection.protocol.flush();
 		this._register(connection.onDidStateChange(e => this._onDidStateChange.fire(e)));
 		return connection.client;
 	}

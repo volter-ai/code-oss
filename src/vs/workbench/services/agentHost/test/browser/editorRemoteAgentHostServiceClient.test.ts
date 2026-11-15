@@ -44,6 +44,8 @@ class TestRemoteAgentConnection extends Disposable implements IRemoteAgentConnec
 		return Promise.resolve();
 	}
 
+	flush(): void { }
+
 	getChannel<T extends IChannel>(_channelName: string): T {
 		return this.channel as T;
 	}

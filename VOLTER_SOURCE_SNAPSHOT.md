@@ -163,6 +163,18 @@ rebase onto a newer Code-OSS can redo them as a checklist:
 - **A widget locked to an agent inserts no mention of it** (`chatInputEditorContrib.ts`: a suggestion of the widget's
   own `lockedAgentId` is skipped, for any agent; volter-ai/code-oss#40, FK2, in place of `patchHarnessDraftAgentMention`'s
   Supercode-only rule).
+- **A Volter editor window's presence travels on its management connection** (`src/vs/server/node/volterWindowChannel.ts`,
+  registered in `serverServices.ts` as the server registers `agentHostProxy`, only where the Volter session that
+  started the server names its origin, `VOLTER_SESSION_ORIGIN`). The window announces itself and its lifecycle on the
+  channel. The server says each, and the connection's permanent end (the IPC server's `onDidRemoveConnection`), to the
+  session's `POST /__editor/windows` with its connection token. Whether the window said it was going is its own
+  Disconnect: the management connection marks an end by the client's Disconnect (`ManagementConnection.endedByClient`,
+  `remoteExtensionManagement.ts`), `remoteExtensionHostAgentServer.ts` hands that to `SocketServer.acceptConnection`
+  (`serverServices.ts`), and the IPC server carries it on its connection (`ClientConnectionEvent` and `Connection`'s
+  `endedByClient`, `src/vs/base/parts/ipc/common/ipc.ts`). The window writes its freeze at once with the connection's
+  `flush()` (`IRemoteAgentConnection`, `remoteAgentService.ts`; `abstractRemoteAgentService.ts` and the test double in
+  `editorRemoteAgentHostServiceClient.test.ts`), as `end()` writes its Disconnect: Chrome runs no further task of a
+  frozen page, and the protocol's writer posts its writes to one.
 
 Build edits a rebase also redoes:
 

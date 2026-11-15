@@ -44,6 +44,7 @@ export class ManagementConnection {
 
 	public readonly protocol: PersistentProtocol;
 	private _disposed: boolean;
+	private _endedByClient = false;
 	private _disconnectRunner1: ProcessTimeRunOnceScheduler;
 	private _disconnectRunner2: ProcessTimeRunOnceScheduler;
 	private readonly _socketCloseListener: IDisposable;
@@ -73,6 +74,7 @@ export class ManagementConnection {
 
 		Event.once(this.protocol.onDidDispose)(() => {
 			this._log(`The client has disconnected gracefully, so the connection will be disposed.`);
+			this._endedByClient = true;
 			this._cleanResources();
 		});
 		this._socketCloseListener = this.protocol.onSocketClose(() => {
@@ -82,6 +84,12 @@ export class ManagementConnection {
 		});
 
 		this._log(`New connection established.`);
+	}
+
+	/** Volter: the client ended this connection itself (its Disconnect, which a web window sends as it shuts down),
+	 *  rather than this server at the end of its reconnection grace. */
+	public get endedByClient(): boolean {
+		return this._endedByClient;
 	}
 
 	private _log(_str: string): void {
