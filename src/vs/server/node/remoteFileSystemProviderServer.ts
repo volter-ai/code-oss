@@ -22,14 +22,24 @@ export class RemoteAgentFileSystemProviderChannel extends AbstractDiskFileSystem
 
 	private readonly uriTransformerCache = new Map<string, IURITransformer>();
 
+	/** `writing`: each whole-file write is made through it, with the connection it comes from (Volter). */
 	constructor(
 		logService: ILogService,
 		private readonly environmentService: IServerEnvironmentService,
-		private readonly configurationService: IConfigurationService
+		private readonly configurationService: IConfigurationService,
+		private readonly writing?: <T>(ctx: RemoteAgentConnectionContext, resource: URI, write: () => Promise<T>) => Promise<T>
 	) {
 		super(new DiskFileSystemProvider(logService), logService);
 
 		this._register(this.provider);
+	}
+
+	override call<TResult>(ctx: RemoteAgentConnectionContext, command: string, args: unknown[]): Promise<TResult> {
+		if (command === 'writeFile' && this.writing) {
+			const resource = this.transformIncoming(this.getUriTransformer(ctx), args[0] as UriComponents);
+			return this.writing(ctx, resource, () => super.call<TResult>(ctx, command, args));
+		}
+		return super.call(ctx, command, args);
 	}
 
 	protected override getUriTransformer(ctx: RemoteAgentConnectionContext): IURITransformer {

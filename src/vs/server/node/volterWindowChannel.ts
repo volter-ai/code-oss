@@ -10,6 +10,8 @@
 // word for that: the Disconnect a web window sends as it shuts down (the extension service's `join.disconnectRemote`,
 // on every shutdown path), which the management connection tells apart from the end of this server's reconnection
 // grace (`--reconnection-grace-time`). Code-OSS's own mechanisms, used as they are, with no clock of ours beside them.
+// Each whole-file write a window's file service makes through this server's file channel is said too, from the write's
+// own connection, so the session records it by that window's participant.
 
 import { Event } from '../../base/common/event.js';
 import { Disposable } from '../../base/common/lifecycle.js';
@@ -17,6 +19,7 @@ import { IPCServer, IServerChannel } from '../../base/parts/ipc/common/ipc.js';
 import { ILogService } from '../../platform/log/common/log.js';
 import { RemoteAgentConnectionContext } from '../../platform/remote/common/remoteAgentEnvironment.js';
 import { generateUuid } from '../../base/common/uuid.js';
+import { URI } from '../../base/common/uri.js';
 
 export const VOLTER_WINDOW_CHANNEL_NAME = 'volterWindow';
 
@@ -26,7 +29,7 @@ const SESSION_ORIGIN_ENV = 'VOLTER_SESSION_ORIGIN';
 /** One report to the session: a window announced, its lifecycle, or its connection gone for good. */
 interface VolterWindowReport {
 	readonly connection: string;
-	readonly event: 'announce' | 'lifecycle' | 'gone';
+	readonly event: 'announce' | 'lifecycle' | 'gone' | 'writing' | 'wrote';
 	readonly [key: string]: unknown;
 }
 
@@ -85,6 +88,26 @@ export class VolterWindowChannel extends Disposable implements IServerChannel<Re
 				return undefined as T;
 		}
 		throw new Error(`Invalid call: ${command}`);
+	}
+
+	/** A window's write through this server's file channel (`RemoteAgentFileSystemProviderChannel`): said before it is
+	 *  made (`writing`), so the session's watcher leaves its file to this write, and once it is done (`wrote`, and whether
+	 *  it landed), so the session records the file as it then is, by the window's participant where it landed. The
+	 *  window is answered after both. A connection whose window never announced itself is not a Volter window: its writes
+	 *  are left to the watcher. */
+	async writing<T>(ctx: RemoteAgentConnectionContext, resource: URI, write: () => Promise<T>): Promise<T> {
+		const connection = this.ids.get(ctx);
+		if (connection === undefined || !this.announced.has(connection) || resource.scheme !== 'file') { return write(); }
+		const path = resource.fsPath;
+		await this.report({ connection, event: 'writing', path });
+		let landed = false;
+		try {
+			const written = await write();
+			landed = true;
+			return written;
+		} finally {
+			await this.report({ connection, event: 'wrote', path, landed });
+		}
 	}
 
 	/** The reports in the order they were made: each fetch is its own request, and a window's last lifecycle reaches the
