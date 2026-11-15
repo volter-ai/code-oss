@@ -1326,6 +1326,14 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	border-color: color-mix(in srgb, var(--vscode-focusBorder) 40%, transparent);
 }
 
+/* In the auxiliary bar, auxiliaryBarPart.css paints every editor with the side bar's background at the
+   same specificity as the input's own rule further down, so bundle order decided. One class more wins it
+   back; the working and editing states below keep theirs. */
+.part.auxiliarybar .interactive-input-part .chat-editor-container .interactive-input-editor .monaco-editor,
+.part.auxiliarybar .interactive-input-part .chat-editor-container .interactive-input-editor .monaco-editor .monaco-editor-background {
+	background-color: var(--vscode-input-background);
+}
+
 .monaco-workbench .interactive-session .chat-input-container.working .interactive-input-editor .monaco-editor,
 .monaco-workbench .interactive-session .chat-input-container.working .interactive-input-editor .monaco-editor .monaco-editor-background {
 	background-color: transparent;
