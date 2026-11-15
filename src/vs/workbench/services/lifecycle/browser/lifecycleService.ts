@@ -148,7 +148,9 @@ export class BrowserLifecycleService extends AbstractLifecycleService {
 		});
 
 		// Veto: handle if provided
+		// (Volter: and said, as the native lifecycle says it, `onShutdownVeto`)
 		if (veto && typeof vetoShutdown === 'function') {
+			this._onShutdownVeto.fire();
 			return vetoShutdown();
 		}
 

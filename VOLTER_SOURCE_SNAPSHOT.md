@@ -190,7 +190,8 @@ rebase onto a newer Code-OSS can redo them as a checklist:
 - **A window says why it is going before Code-OSS's own Disconnect** (volter-ai/editor's PR 8a review). The web
   `BrowserLifecycleService` (`services/lifecycle/browser/lifecycleService.ts`) fires `onBeforeShutdown` and
   `onWillShutdown` with the reason an expected shutdown named (`withExpectedShutdown`, as `BrowserHostService.reload`
-  names `RELOAD`), not always `QUIT`. `IRemoteAgentConnection.getConnectedChannel` (`remoteAgentService.ts`,
+  names `RELOAD`), not always `QUIT`, and its veto fires `onShutdownVeto`, as the native lifecycle's does
+  (volter-ai/editor#910), so a window can say it stayed. `IRemoteAgentConnection.getConnectedChannel` (`remoteAgentService.ts`,
   `abstractRemoteAgentService.ts`, and the test double in `editorRemoteAgentHostServiceClient.test.ts`) gives the channel
   on the connection as it is, whose calls are written at once, so what a page says at `onBeforeShutdown` is on the
   connection before the extension service's Disconnect at `onWillShutdown`.
