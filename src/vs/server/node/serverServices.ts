@@ -396,12 +396,6 @@ export async function setupServerServices(connectionToken: ServerConnectionToken
 		socketServer.registerChannel(NativeMcpDiscoveryHelperChannelName, instantiationService.createInstance(NativeMcpDiscoveryHelperChannel, (ctx: RemoteAgentConnectionContext) => getUriTransformer(ctx.remoteAuthority)));
 		socketServer.registerChannel(McpGatewayChannelName, instantiationService.createInstance(McpGatewayChannel<RemoteAgentConnectionContext>, socketServer));
 
-		// A server started with a Node IPC channel (the Volter session's) ends with the process that started it: the
-		// channel's `disconnect`, Node's own event for a forked child whose parent went
-		if (process.send) {
-			process.once('disconnect', () => process.exit(0));
-		}
-
 		// A Volter editor window's presence, on its management connection (`volterWindowChannel.ts`)
 		const volterWindowChannel = VolterWindowChannel.create(socketServer, logService);
 		if (volterWindowChannel) {
