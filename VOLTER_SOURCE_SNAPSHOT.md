@@ -117,18 +117,6 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `VSCODE_EXTHOST_IPC_READY` and ends the earlier one, so the host takes the connection the client is still on;
   `src/vs/base/parts/ipc/node/ipc.net.ts` ends a drain with an empty write's callback, so a reply still in flight no
   longer holds the reconnection.
-- **Workspace storage can live at an embedder's URL.** `IWorkbenchConstructionOptions.workspaceStorageUrl`
-  (`src/vs/workbench/browser/web.api.ts`), passed by `web.main.ts` to `BrowserStorageService`, whose
-  `HttpStorageDatabase` (`src/vs/workbench/services/storage/browser/storageService.ts`) implements
-  `IIndexedDBStorageDatabase` over `GET`/`POST` of that URL. Set by the server from `product.json` (below) and by the
-  limited view's `boot.ts`. A write the URL refuses (or that can't reach it) is answered for that write: a warning in the
-  server's words, and its changes are given back, under any made since, for the next write to carry (EGG24). Its close,
-  which `BrowserStorageService.close` (the window's shutdown) now calls for it in every browser, not only Safari, sends
-  at once what is still owed (the write in flight's changes under every change not yet written), and a refusal of that
-  last write is an error, since nothing carries it after. Each write carries the window's `writer` id and a
-  `sequence`, and the URL skips a write older than one of that window it has already applied, so the close's write and
-  one still in flight never land out of order. The close's write is always sent, marked `closing`, so the URL can let
-  go of the window's numbering once every earlier write of it has arrived.
 - **An `ObservableMemento` does not echo its own or a sibling's write.**
   `src/vs/platform/observable/common/observableMemento.ts` remembers the stored bytes and ignores a storage event that
   carries them.
@@ -204,9 +192,9 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   - `webviewEndpoint` puts each webview on its own subdomain of the page's host (`http://{{uuid}}.<host>`), its
     documents served by this server, and the CSP's `frame-src` admits that origin in place of `*.vscode-cdn.net`
     (upstream's again with `--use-test-resolver`);
-  - `initialColorTheme`, `workspaceStorageUrl` and the page's import map come from the product
-    (`IProductConfiguration`'s `initialColorTheme`, `workspaceStorageUrl` and `importMap`, `src/vs/base/common/product.ts`,
-    which volter-ai/editor's overlay writes into `product.json`); both pages (`workbench.html`, `workbench-dev.html`)
+  - `initialColorTheme` and the page's import map come from the product (`IProductConfiguration`'s
+    `initialColorTheme` and `importMap`, `src/vs/base/common/product.ts`, which volter-ai/editor's overlay writes into
+    `product.json`); both pages (`workbench.html`, `workbench-dev.html`)
     carry the map in `vscode-workbench-import-map` and add it as their one import map before any module loads, and say
     the product's `color-scheme` before styles load;
   - the CSP admits loopback pages a project runs (`frame-src`), loopback http, `blob:` and `data:` (`connect-src`), and

@@ -439,8 +439,7 @@ export class WebClientServer {
 			callbackRoute: callbackRoute,
 			// Volter: each webview on its own subdomain of the page's host, its documents served by this server
 			webviewEndpoint: useTestResolver ? undefined : `http://{{uuid}}.${remoteAuthority}${staticRoute}/out/vs/workbench/contrib/webview/browser/pre/`,
-			initialColorTheme: this._productService.initialColorTheme,
-			workspaceStorageUrl: this._productService.workspaceStorageUrl
+			initialColorTheme: this._productService.initialColorTheme
 		};
 
 		const cookies = cookie.parse(req.headers.cookie || '');
