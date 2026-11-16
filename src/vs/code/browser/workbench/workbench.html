@@ -6,6 +6,7 @@
 			performance.mark('code/didStartRenderer');
 		</script>
 		<meta charset="utf-8" />
+		<meta name="color-scheme" content="{{WORKBENCH_COLOR_SCHEME}}">
 
 		<!-- Mobile tweaks -->
 		<meta name="mobile-web-app-capable" content="yes" />
@@ -19,6 +20,7 @@
 		<!-- Workbench Configuration -->
 		<meta id="vscode-workbench-web-configuration" data-settings="{{WORKBENCH_WEB_CONFIGURATION}}">
 		<meta id="vscode-workbench-web-base-url" data-settings="{{WORKBENCH_WEB_BASE_URL}}">
+		<meta id="vscode-workbench-import-map" data-settings="{{WORKBENCH_IMPORT_MAP}}">
 
 		<!-- Workbench Auth Session -->
 		<meta id="vscode-workbench-auth-session" data-settings="{{WORKBENCH_AUTH_SESSION}}">
@@ -37,6 +39,13 @@
 	<script nonce="{{WORKBENCH_SCRIPT_NONCE}}">
 		const baseUrl = new URL(document.getElementById('vscode-workbench-web-base-url').getAttribute('data-settings'), window.location.origin).toString();
 		globalThis._VSCODE_FILE_ROOT = baseUrl + '/out/';
+	</script>
+	<script nonce="{{WORKBENCH_SCRIPT_NONCE}}">
+		const importMapElement = document.createElement('script');
+		importMapElement.type = 'importmap';
+		importMapElement.nonce = document.currentScript.nonce;
+		importMapElement.textContent = document.getElementById('vscode-workbench-import-map').getAttribute('data-settings');
+		document.head.appendChild(importMapElement);
 	</script>
 	<script nonce="{{WORKBENCH_SCRIPT_NONCE}}">
 		performance.mark('code/willLoadWorkbenchMain');

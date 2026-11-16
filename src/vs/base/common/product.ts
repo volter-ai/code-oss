@@ -129,6 +129,11 @@ export interface IProductConfiguration {
 	readonly webUrl?: string;
 	readonly webEndpointUrlTemplate?: string;
 	readonly webviewContentExternalBaseUrlTemplate?: string;
+	/** Volter: what the server writes into its workbench page (`webClientServer.ts`): the page's import map, the color
+	 *  scheme it paints before its theme loads, and where its workspace storage lives. */
+	readonly importMap?: { readonly imports: { readonly [specifier: string]: string } };
+	readonly initialColorTheme?: { readonly themeType: 'dark' | 'light' };
+	readonly workspaceStorageUrl?: string;
 	readonly target?: string;
 	readonly nlsCoreBaseUrl?: string;
 

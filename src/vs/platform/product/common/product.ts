@@ -103,6 +103,8 @@ else {
 				providerScopes: []
 			}
 		});
+		// Volter: the product a sources page's server named (`workbench-dev.html`), which its workers are handed too
+		Object.assign(product, globalThis._VSCODE_PRODUCT_JSON);
 	}
 }
 
