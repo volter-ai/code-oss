@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import es from 'event-stream';
+import { Transform } from 'node:stream';
 import { gulp, filter, sourcemaps, svgmin } from './gulp/facade.ts';
 import path from 'path';
 import fs from 'fs';
@@ -78,7 +79,6 @@ function bundleESMTask(opts: IBundleESMTaskOpts): NodeJS.ReadWriteStream {
 
 	const bundleAsync = async () => {
 		const files: VinylFile[] = [];
-		const tasks: Promise<any>[] = [];
 
 		for (const entryPoint of entryPoints) {
 			fancyLog(`Bundled entry point: ${ansiColors.yellow(entryPoint.name)}...`);
@@ -177,10 +177,10 @@ function bundleESMTask(opts: IBundleESMTaskOpts): NodeJS.ReadWriteStream {
 				}
 			});
 
-			tasks.push(task);
+			// (Volter: one entry point is bundled at a time)
+			await task;
 		}
 
-		await Promise.all(tasks);
 		return { files };
 	};
 
@@ -236,7 +236,8 @@ export function minifyTask(src: string, sourceMapBaseUrl?: string): (cb: any) =>
 			gulp.src([src + '/**', '!' + src + '/**/*.map']),
 			esbuildFilter,
 			sourcemaps.init({ loadMaps: true }),
-			es.map((f: any, cb) => {
+			// (Volter: a Transform takes the next file once this one's callback ran, so one file is minified at a time)
+			new Transform({ objectMode: true, transform(f: any, _encoding, cb) {
 				esbuild.build({
 					entryPoints: [f.path],
 					minify: true,
@@ -261,7 +262,7 @@ export function minifyTask(src: string, sourceMapBaseUrl?: string): (cb: any) =>
 						cb(undefined, f);
 					}
 				}, cb);
-			}),
+			} }),
 			esbuildFilter.restore,
 			svgFilter,
 			svgmin(),

@@ -209,6 +209,12 @@ Build edits a rebase also redoes:
 - `.npmrc`'s `disturl` is `https://artifacts.electronjs.org/headers/dist`.
 - `build/gulpfile.reh.ts` has no win32 dependency re-signing task (`patchWin32DependenciesTask` and its signtool and
   rcedit helpers): no signing service re-signs this release, so its win32 binaries keep their published bytes.
+- A build holds one compiler's or bundler's memory at a time, with every compilation and validation kept:
+  `build/lib/compilation.ts`'s `compileTask` runs its tsgo type check to its end before it creates the emit's
+  compiler; `build/lib/extensions.ts` runs an extension's esbuild and its type checks, and the local extensions, one
+  stream after another (`serialStreams`), and `buildExtensionMedia` bundles and type-checks one media script at a time
+  outside watch; `build/lib/optimize.ts` bundles one entry point at a time and minifies one file at a time (a
+  `Transform` in place of `es.map`); `build/npm/postinstall.ts` runs the JS-only installs one at a time.
 
 ## Patches moved from the editor overlay
 
