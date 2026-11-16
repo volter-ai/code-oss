@@ -810,16 +810,11 @@ export class ChannelClient implements IChannelClient, IDisposable {
 export interface ClientConnectionEvent {
 	protocol: IMessagePassingProtocol;
 	readonly onDidClientDisconnect: Event<void>;
-	/** Volter: whether the client itself ended the connection (its Disconnect), rather than the server after losing it;
-	 *  asked once the connection is gone. */
-	readonly endedByClient?: () => boolean;
 }
 
 interface Connection<TContext> extends Client<TContext> {
 	readonly channelServer: ChannelServer<TContext>;
 	readonly channelClient: ChannelClient;
-	/** Volter: as its `ClientConnectionEvent` says; false where that names none. */
-	readonly endedByClient: () => boolean;
 }
 
 /**
@@ -850,7 +845,7 @@ export class IPCServer<TContext = string> implements IChannelServer<TContext>, I
 	}
 
 	constructor(onDidClientConnect: Event<ClientConnectionEvent>, ipcLogger?: IIPCLogger | null, timeoutDelay?: number) {
-		this.disposables.add(onDidClientConnect(({ protocol, onDidClientDisconnect, endedByClient }) => {
+		this.disposables.add(onDidClientConnect(({ protocol, onDidClientDisconnect }) => {
 			const onFirstMessage = Event.once(protocol.onMessage);
 
 			const connectionDisposables = new DisposableStore();
@@ -864,7 +859,7 @@ export class IPCServer<TContext = string> implements IChannelServer<TContext>, I
 
 				this.channels.forEach((channel, name) => channelServer.registerChannel(name, channel));
 
-				const connection: Connection<TContext> = { channelServer, channelClient, ctx, endedByClient: endedByClient ?? (() => false) };
+				const connection: Connection<TContext> = { channelServer, channelClient, ctx };
 				this._connections.add(connection);
 				this._onDidAddConnection.fire(connection);
 

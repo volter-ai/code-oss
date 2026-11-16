@@ -6,13 +6,12 @@
 // A Volter editor window's presence, on the window's own management connection to this server, as this server registers
 // its agent host channel (`agentHostProxy`). The window says who it is and its lifecycle on the channel; this server says
 // each of those, and the connection's permanent end, to the Volter session that started it, on the Node IPC channel it
-// was spawned with. The connection's end is
-// the IPC server's own event (`onDidRemoveConnection`), and whether the window said it was going is Code-OSS's own
-// word for that: the Disconnect a web window sends as it shuts down (the extension service's `join.disconnectRemote`,
-// on every shutdown path), which the management connection tells apart from the end of this server's reconnection
-// grace (`--reconnection-grace-time`). Code-OSS's own mechanisms, used as they are, with no clock of ours beside them.
+// was spawned with. The connection's end is the IPC server's own event (`onDidRemoveConnection`): the window's
+// Disconnect, or the end of this server's reconnection grace (`--reconnection-grace-time`), which nothing here tells
+// apart. Code-OSS's own mechanisms, used as they are, with no clock of ours beside them.
 // Each whole-file write a window's file service makes through this server's file channel is said too, from the write's
-// own connection, so the session records it by that window's participant.
+// own connection, so the session records it by that window's participant, or refuses it where another window holds the
+// file's lock (`FileSystemProviderErrorCode.FileWriteLocked`, in the session's words).
 
 import { Event } from '../../base/common/event.js';
 import { Disposable } from '../../base/common/lifecycle.js';
@@ -21,6 +20,7 @@ import { ILogService } from '../../platform/log/common/log.js';
 import { RemoteAgentConnectionContext } from '../../platform/remote/common/remoteAgentEnvironment.js';
 import { generateUuid } from '../../base/common/uuid.js';
 import { URI } from '../../base/common/uri.js';
+import { createFileSystemProviderError, FileSystemProviderErrorCode } from '../../platform/files/common/files.js';
 
 export const VOLTER_WINDOW_CHANNEL_NAME = 'volterWindow';
 
@@ -55,8 +55,9 @@ export class VolterWindowChannel extends Disposable implements IServerChannel<Re
 		return process.send ? new VolterWindowChannel(ipcServer, logService) : undefined;
 	}
 
-	/** Each report the session has yet to answer, by its number. */
-	private readonly unanswered = new Map<number, () => void>();
+	/** Each report the session has yet to answer, by its number: resolved with the session's refusal of a write, as
+	 *  locked, or undefined. */
+	private readonly unanswered = new Map<number, (locked: string | undefined) => void>();
 	private reports = 0;
 
 	private constructor(
@@ -66,15 +67,15 @@ export class VolterWindowChannel extends Disposable implements IServerChannel<Re
 		super();
 		// (the session answers each report once it has taken it, in order; a session gone answers none, so its channel's
 		// end answers them all)
-		const answered = (message: { answered?: number; refused?: string | null }) => {
+		const answered = (message: { answered?: number; refused?: string | null; locked?: string }) => {
 			const report = this.unanswered.get(message.answered ?? -1);
 			if (report === undefined) { return; }
 			this.unanswered.delete(message.answered!);
 			if (message.refused) { this.logService.warn(`[volterWindow] the session refused a window's report: ${message.refused}`); }
-			report();
+			report(message.locked);
 		};
 		const gone = () => {
-			for (const report of this.unanswered.values()) { report(); }
+			for (const report of this.unanswered.values()) { report(undefined); }
 			this.unanswered.clear();
 		};
 		process.on('message', answered);
@@ -83,7 +84,7 @@ export class VolterWindowChannel extends Disposable implements IServerChannel<Re
 		this._register(ipcServer.onDidRemoveConnection(client => {
 			const connection = this.ids.get(client.ctx);
 			if (connection === undefined || !this.announced.delete(connection)) { return; }
-			this.report({ connection, event: 'gone', saidGoing: client.endedByClient() });
+			this.report({ connection, event: 'gone' });
 		}));
 	}
 
@@ -109,13 +110,15 @@ export class VolterWindowChannel extends Disposable implements IServerChannel<Re
 	/** A window's write through this server's file channel (`RemoteAgentFileSystemProviderChannel`): said before it is
 	 *  made (`writing`), so the session's watcher leaves its file to this write, and once it is done (`wrote`, and whether
 	 *  it landed), so the session records the file as it then is, by the window's participant where it landed. The
-	 *  window is answered after both. A connection whose window never announced itself is not a Volter window: its writes
-	 *  are left to the watcher. */
+	 *  window is answered after both. A `writing` the session answers as locked (another window holds the file's lock)
+	 *  is not made: it throws `FileWriteLocked` in the session's words. A connection whose window never announced itself
+	 *  is not a Volter window: its writes are left to the watcher. */
 	async writing<T>(ctx: RemoteAgentConnectionContext, resource: URI, write: () => Promise<T>): Promise<T> {
 		const connection = this.ids.get(ctx);
 		if (connection === undefined || !this.announced.has(connection) || resource.scheme !== 'file') { return write(); }
 		const path = resource.fsPath;
-		await this.report({ connection, event: 'writing', path });
+		const locked = await this.report({ connection, event: 'writing', path });
+		if (locked) { throw createFileSystemProviderError(locked, FileSystemProviderErrorCode.FileWriteLocked); }
 		let landed = false;
 		try {
 			const written = await write();
@@ -127,16 +130,16 @@ export class VolterWindowChannel extends Disposable implements IServerChannel<Re
 	}
 
 	/** Said to the session on the Node IPC channel it spawned this server with, whose messages arrive in the order they
-	 *  are sent; answered once the session has taken it. A session that can't be reached is logged in its words: the
-	 *  window's presence is then unknown to it. */
-	private report(report: VolterWindowReport): Promise<void> {
+	 *  are sent; answered once the session has taken it, with its refusal of a write as locked. A session that can't be
+	 *  reached is logged in its words: the window's presence is then unknown to it. */
+	private report(report: VolterWindowReport): Promise<string | undefined> {
 		const id = ++this.reports;
 		return new Promise(resolve => {
 			this.unanswered.set(id, resolve);
 			process.send!({ ...report, id }, undefined, undefined, error => {
 				if (!error || !this.unanswered.delete(id)) { return; }
 				this.logService.warn(`[volterWindow] the session could not be told the window's ${report.event}: ${error.message}`);
-				resolve();
+				resolve(undefined);
 			});
 		});
 	}
