@@ -171,14 +171,14 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   reconnect". On the same channel `server-main.ts` says `{ event: 'serving' }` once its code has loaded behind the
   listening socket (where `createServer` prints `Web UI available at`), and `{ event: 'refused', why }` where its http
   server's `error` comes before it listens (a listen refused, which upstream only logs, its process kept alive).
-- **A window's write is said from its own connection** (volter-ai/editor's #881 cut). The file channel
+- **A window's write is said from its own connection.** The file channel
   (`RemoteAgentFileSystemProviderChannel`, `remoteFileSystemProviderServer.ts`) makes each `writeFile` call, each
   `open` for writing (`isFileOpenForWriteOptions`) and each `close` through `volterWindowChannel.ts` with the call's
   connection context, which says `writing` to the session before the write (or the handle's open) and `wrote` (and
   whether it landed) after it (or the handle's close), for a connection whose window announced itself, so the session
   records the file by that window's participant. A handle its window left open at its connection's permanent end is
   said as a `wrote` that did not land. Where the session answers `writing` as locked (another window holds the file's
-  lock, volter-ai/editor's collaboration PR 3), the write is not made and throws
+  lock), the write is not made and throws
   `FileSystemProviderErrorCode.FileWriteLocked` in the session's words.
 - **The web lifecycle says an expected shutdown's reason** (volter-ai/editor's PR 8a review). The web
   `BrowserLifecycleService` (`services/lifecycle/browser/lifecycleService.ts`) fires `onBeforeShutdown` and
