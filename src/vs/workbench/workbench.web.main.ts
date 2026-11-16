@@ -192,3 +192,7 @@ import './contrib/browserView/browser/browserView.contribution.js';
 //#endregion
 
 import './contrib/chat/browser/volterHarness/volterChat.services.js';
+
+// Volter: the limited view's folder provider, which does nothing in a page that publishes no view store
+// (volter-ai/editor's scripts/workbench/overlay.mjs copies its tree in)
+import './contrib/volterView/browser/volterView.contribution.js';

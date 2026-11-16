@@ -363,6 +363,10 @@ const serverWebResourcePatterns = [
 const webResourcePatterns = [
 	...commonResourcePatterns,
 
+	// Volter's editor kit and product half: their media (files only: the builder's copy of a directory is EPERM on Windows)
+	'vs/workbench/contrib/volter/browser/media/**/*.*',
+	'vs/workbench/contrib/volterProduct/browser/media/**/*.*',
+
 	// Web HTML
 	'vs/code/browser/workbench/workbench.html',
 	'vs/code/browser/workbench/workbench-dev.html',
