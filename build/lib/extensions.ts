@@ -673,11 +673,7 @@ export function buildExtensionMedia(isWatch: boolean, outputRoot?: string): Prom
 	const typeCheckTasks = esbuildMediaScripts.map(({ tsconfig }) => {
 		const tsconfigPath = path.join(extensionsPath, tsconfig);
 		const config = { taskName: 'typechecking extension media (tsgo)', noEmit: true };
-		if (!isWatch) {
-			return spawnTsgo(tsconfigPath, config);
-		} else {
-			return watchTypeCheckExtensionMedia(tsconfigPath, config);
-		}
+		return watchTypeCheckExtensionMedia(tsconfigPath, config);
 	});
 
 	return Promise.all([esbuildTask, ...typeCheckTasks]).then(() => undefined);
