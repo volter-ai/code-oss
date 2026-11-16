@@ -6,7 +6,7 @@
 import { Emitter } from '../../base/common/event.js';
 import { URI, UriComponents } from '../../base/common/uri.js';
 import { IURITransformer } from '../../base/common/uriIpc.js';
-import { IFileChange } from '../../platform/files/common/files.js';
+import { IFileChange, IFileOpenOptions, isFileOpenForWriteOptions } from '../../platform/files/common/files.js';
 import { ILogService } from '../../platform/log/common/log.js';
 import { createURITransformer } from '../../base/common/uriTransformer.js';
 import { RemoteAgentConnectionContext } from '../../platform/remote/common/remoteAgentEnvironment.js';
@@ -17,17 +17,19 @@ import { IServerEnvironmentService } from './serverEnvironmentService.js';
 import { AbstractDiskFileSystemProviderChannel, AbstractSessionFileWatcher, ISessionFileWatcher } from '../../platform/files/node/diskFileSystemProviderServer.js';
 import { IRecursiveWatcherOptions } from '../../platform/files/common/watcher.js';
 import { IConfigurationService } from '../../platform/configuration/common/configuration.js';
+import type { VolterWindowChannel } from './volterWindowChannel.js';
 
 export class RemoteAgentFileSystemProviderChannel extends AbstractDiskFileSystemProviderChannel<RemoteAgentConnectionContext> {
 
 	private readonly uriTransformerCache = new Map<string, IURITransformer>();
 
-	/** `writing`: each whole-file write is made through it, with the connection it comes from (Volter). */
+	/** `windowWrites` (Volter): each write is made through it, with the connection it comes from: a whole-file write, and a
+	 *  handle opened for writing from its `open` to its `close`. */
 	constructor(
 		logService: ILogService,
 		private readonly environmentService: IServerEnvironmentService,
 		private readonly configurationService: IConfigurationService,
-		private readonly writing?: <T>(ctx: RemoteAgentConnectionContext, resource: URI, write: () => Promise<T>) => Promise<T>
+		private readonly windowWrites?: VolterWindowChannel
 	) {
 		super(new DiskFileSystemProvider(logService), logService);
 
@@ -35,9 +37,20 @@ export class RemoteAgentFileSystemProviderChannel extends AbstractDiskFileSystem
 	}
 
 	override call<TResult>(ctx: RemoteAgentConnectionContext, command: string, args: unknown[]): Promise<TResult> {
-		if (command === 'writeFile' && this.writing) {
-			const resource = this.transformIncoming(this.getUriTransformer(ctx), args[0] as UriComponents);
-			return this.writing(ctx, resource, () => super.call<TResult>(ctx, command, args));
+		const writes = this.windowWrites;
+		if (writes) {
+			const resource = () => this.transformIncoming(this.getUriTransformer(ctx), args[0] as UriComponents);
+			switch (command) {
+				case 'writeFile':
+					return writes.writing(ctx, resource(), () => super.call<TResult>(ctx, command, args));
+				case 'open':
+					if (isFileOpenForWriteOptions(args[1] as IFileOpenOptions)) {
+						return writes.opening(ctx, resource(), () => super.call<number>(ctx, command, args)) as Promise<TResult>;
+					}
+					break;
+				case 'close':
+					return writes.closing(args[0] as number, () => super.call<void>(ctx, command, args)) as Promise<TResult>;
+			}
 		}
 		return super.call(ctx, command, args);
 	}
