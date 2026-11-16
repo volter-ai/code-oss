@@ -174,26 +174,20 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   registered in `serverServices.ts` as the server registers `agentHostProxy`, only where the process that started the
   server gave it a Node IPC channel, as the Volter session does). The window announces itself and its lifecycle on the
   channel. The server says each, and the connection's permanent end (the IPC server's `onDidRemoveConnection`), to the
-  session on that IPC channel (`process.send`), which answers each report once it has taken it. Whether the window said it was going is its own
-  Disconnect: the management connection marks an end by the client's Disconnect (`ManagementConnection.endedByClient`,
-  `remoteExtensionManagement.ts`), `remoteExtensionHostAgentServer.ts` hands that to `SocketServer.acceptConnection`
-  (`serverServices.ts`), and the IPC server carries it on its connection (`ClientConnectionEvent` and `Connection`'s
-  `endedByClient`, `src/vs/base/parts/ipc/common/ipc.ts`). The window writes its freeze at once with the connection's
-  `flush()` (`IRemoteAgentConnection`, `remoteAgentService.ts`; `abstractRemoteAgentService.ts` and the test double in
-  `editorRemoteAgentHostServiceClient.test.ts`), as `end()` writes its Disconnect: Chrome runs no further task of a
-  frozen page, and the protocol's writer posts its writes to one.
+  session on that IPC channel (`process.send`), which answers each report once it has taken it. The connection's end
+  is its Disconnect or the end of the reconnection grace, which nothing tells apart.
 - **A window's whole-file write is said from its own connection** (volter-ai/editor's #881 cut). The file channel
   (`RemoteAgentFileSystemProviderChannel`, `remoteFileSystemProviderServer.ts`) makes each `writeFile` call through a
   `writing` hook with the call's connection context; `volterWindowChannel.ts` says `writing` to the session before the
   write and `wrote` (and whether it landed) after, for a connection whose window announced itself, so the session
-  records the file by that window's participant. Streamed writes (`open`, `write`, `close`) are not said.
-- **A window says why it is going before Code-OSS's own Disconnect** (volter-ai/editor's PR 8a review). The web
+  records the file by that window's participant. Where the session answers `writing` as locked (another window holds
+  the file's lock, volter-ai/editor's collaboration PR 3), the write is not made and throws
+  `FileSystemProviderErrorCode.FileWriteLocked` in the session's words. Streamed writes (`open`, `write`, `close`) are
+  not said.
+- **The web lifecycle says an expected shutdown's reason** (volter-ai/editor's PR 8a review). The web
   `BrowserLifecycleService` (`services/lifecycle/browser/lifecycleService.ts`) fires `onBeforeShutdown` and
   `onWillShutdown` with the reason an expected shutdown named (`withExpectedShutdown`, as `BrowserHostService.reload`
-  names `RELOAD`), not always `QUIT`. `IRemoteAgentConnection.getConnectedChannel` (`remoteAgentService.ts`,
-  `abstractRemoteAgentService.ts`, and the test double in `editorRemoteAgentHostServiceClient.test.ts`) gives the channel
-  on the connection as it is, whose calls are written at once, so what a page says at `onBeforeShutdown` is on the
-  connection before the extension service's Disconnect at `onWillShutdown`.
+  names `RELOAD`), not always `QUIT`. An upstream bug.
 - **A conversation is opened on the Chat view's own answer to its load** (EGG21). `volter.chat.openSession` and
   `volter.chat.send`'s named conversation (`volterHarness/volterChat.ts`, `openConversation`) wait on
   `ChatViewPane.loadSession`'s own return (unchanged from upstream), never on the widget a load leaves behind. A

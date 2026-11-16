@@ -445,8 +445,8 @@ export class SocketServer<TContext = string> extends IPCServer<TContext> {
 		this._onDidConnectEmitter = emitter;
 	}
 
-	public acceptConnection(protocol: IMessagePassingProtocol, onDidClientDisconnect: Event<void>, endedByClient?: () => boolean): void {
-		this._onDidConnectEmitter.fire({ protocol, onDidClientDisconnect, endedByClient });
+	public acceptConnection(protocol: IMessagePassingProtocol, onDidClientDisconnect: Event<void>): void {
+		this._onDidConnectEmitter.fire({ protocol, onDidClientDisconnect });
 	}
 }
 
