@@ -65,7 +65,7 @@ suite('WebClientServer', () => {
 			containsEncodedForwardedPrefix: rendered.includes(htmlAttributeEncodeValue(forwardedPrefix)),
 			containsEncodedLocaleUrl: rendered.includes(htmlAttributeEncodeValue(localeUrl))
 		}, {
-			scriptElementCount: 6,
+			scriptElementCount: 7,
 			inlineScriptWithoutNonceCount: 0,
 			containsRawForwardedPrefix: false,
 			containsRawLocaleUrl: false,
