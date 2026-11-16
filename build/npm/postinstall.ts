@@ -311,8 +311,8 @@ async function main() {
 		await task();
 	}
 
-	// JS-only dirs run in parallel
-	const concurrency = Math.min(os.cpus().length, 8);
+	// JS-only dirs run one at a time (Volter: one npm install's memory at a time)
+	const concurrency = 1;
 	log('.', `Running ${parallelTasks.length} npm installs with concurrency ${concurrency}...`);
 	await runWithConcurrency(parallelTasks, concurrency);
 

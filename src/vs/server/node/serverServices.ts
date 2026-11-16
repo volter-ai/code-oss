@@ -402,8 +402,7 @@ export async function setupServerServices(connectionToken: ServerConnectionToken
 			socketServer.registerChannel(VOLTER_WINDOW_CHANNEL_NAME, disposables.add(volterWindowChannel));
 		}
 
-		const remoteFileSystemChannel = disposables.add(new RemoteAgentFileSystemProviderChannel(logService, environmentService, configurationService,
-			volterWindowChannel ? (ctx, resource, write) => volterWindowChannel.writing(ctx, resource, write) : undefined));
+		const remoteFileSystemChannel = disposables.add(new RemoteAgentFileSystemProviderChannel(logService, environmentService, configurationService, volterWindowChannel));
 		socketServer.registerChannel(REMOTE_FILE_SYSTEM_CHANNEL_NAME, remoteFileSystemChannel);
 
 		socketServer.registerChannel('request', new RequestChannel(accessor.get(IRequestService)));

@@ -118,6 +118,11 @@ if (shouldSpawnCli) {
 		return remoteExtensionHostAgentServer.handleUpgrade(req, socket);
 	});
 	server.on('error', async (err) => {
+		// (Volter) A listen refused is said to the process that started this server, on its Node IPC channel, in the
+		// error's words: the server never listens, and its services, loaded below, keep its process alive
+		if (process.send && !server.listening) {
+			process.send({ event: 'refused', why: err.message });
+		}
 		const remoteExtensionHostAgentServer = await getRemoteExtensionHostAgentServer();
 		return remoteExtensionHostAgentServer.handleServerError(err);
 	});
@@ -156,6 +161,9 @@ if (shouldSpawnCli) {
 		(globalThis as { vscodeServerListenTime?: number }).vscodeServerListenTime = performance.now();
 
 		await getRemoteExtensionHostAgentServer();
+		// (Volter) That it serves is said on the same channel, once its code has loaded behind the listening socket, where
+		// `createServer` prints its web UI's ready line (`Web UI available at`)
+		process.send?.({ event: 'serving' });
 	});
 
 	process.on('exit', () => {

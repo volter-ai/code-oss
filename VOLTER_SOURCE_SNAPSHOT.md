@@ -162,20 +162,24 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   registered in `serverServices.ts` as the server registers `agentHostProxy`, only where the process that started the
   server gave it a Node IPC channel, as the Volter session does). The window announces itself and its lifecycle on the
   channel. The server says each, and the connection's permanent end (the IPC server's `onDidRemoveConnection`), to the
-  session on that IPC channel (`process.send`), which answers each report once it has taken it. The connection's end
-  is its Disconnect or the end of the reconnection grace, which nothing tells apart. A server started with that IPC
-  channel exits at the channel's `disconnect`, or at once if the channel is already closed (`server-main.ts`'s server
+  session on that IPC channel (`process.send`), which answers each report once it has taken it; a report the session
+  refuses rejects the window's call (its announce, its lifecycle, its write) with the session's words, and one no call
+  waits on (a connection's end) is logged. The connection's end is its Disconnect or the end of the reconnection grace,
+  which nothing tells apart. A server started with that IPC channel exits at the channel's `disconnect`, or at once if the channel is already closed (`server-main.ts`'s server
   branch, before anything loads), Node's own event for a forked child whose parent went, with 128 + SIGHUP, never the
   lifetime's 0, so a session killed outright takes its server with it, and its windows meet Code-OSS's own "Cannot
-  reconnect".
-- **A window's whole-file write is said from its own connection** (volter-ai/editor's #881 cut). The file channel
-  (`RemoteAgentFileSystemProviderChannel`, `remoteFileSystemProviderServer.ts`) makes each `writeFile` call through a
-  `writing` hook with the call's connection context; `volterWindowChannel.ts` says `writing` to the session before the
-  write and `wrote` (and whether it landed) after, for a connection whose window announced itself, so the session
-  records the file by that window's participant. Where the session answers `writing` as locked (another window holds
-  the file's lock, volter-ai/editor's collaboration PR 3), the write is not made and throws
-  `FileSystemProviderErrorCode.FileWriteLocked` in the session's words. Streamed writes (`open`, `write`, `close`) are
-  not said.
+  reconnect". On the same channel `server-main.ts` says `{ event: 'serving' }` once its code has loaded behind the
+  listening socket (where `createServer` prints `Web UI available at`), and `{ event: 'refused', why }` where its http
+  server's `error` comes before it listens (a listen refused, which upstream only logs, its process kept alive).
+- **A window's write is said from its own connection.** The file channel
+  (`RemoteAgentFileSystemProviderChannel`, `remoteFileSystemProviderServer.ts`) makes each `writeFile` call, each
+  `open` for writing (`isFileOpenForWriteOptions`) and each `close` through `volterWindowChannel.ts` with the call's
+  connection context, which says `writing` to the session before the write (or the handle's open) and `wrote` (and
+  whether it landed) after it (or the handle's close), for a connection whose window announced itself, so the session
+  records the file by that window's participant. A handle its window left open at its connection's permanent end is
+  said as a `wrote` that did not land. Where the session answers `writing` as locked (another window holds the file's
+  lock), the write is not made and throws
+  `FileSystemProviderErrorCode.FileWriteLocked` in the session's words.
 - **The web lifecycle says an expected shutdown's reason** (volter-ai/editor's PR 8a review). The web
   `BrowserLifecycleService` (`services/lifecycle/browser/lifecycleService.ts`) fires `onBeforeShutdown` and
   `onWillShutdown` with the reason an expected shutdown named (`withExpectedShutdown`, as `BrowserHostService.reload`
@@ -209,6 +213,12 @@ Build edits a rebase also redoes:
 - `.npmrc`'s `disturl` is `https://artifacts.electronjs.org/headers/dist`.
 - `build/gulpfile.reh.ts` has no win32 dependency re-signing task (`patchWin32DependenciesTask` and its signtool and
   rcedit helpers): no signing service re-signs this release, so its win32 binaries keep their published bytes.
+- A build holds one compiler's or bundler's memory at a time, with every compilation and validation kept:
+  `build/lib/compilation.ts`'s `compileTask` runs its tsgo type check to its end before it creates the emit's
+  compiler; `build/lib/extensions.ts` runs an extension's esbuild and its type checks, and the local extensions, one
+  stream after another (`serialStreams`), and `buildExtensionMedia` bundles and type-checks one media script at a time
+  outside watch; `build/lib/optimize.ts` bundles one entry point at a time and minifies one file at a time (a
+  `Transform` in place of `es.map`); `build/npm/postinstall.ts` runs the JS-only installs one at a time.
 
 ## Patches moved from the editor overlay
 
