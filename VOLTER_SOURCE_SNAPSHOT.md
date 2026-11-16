@@ -187,8 +187,7 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   session-content catches skip `isCancellationError`, as its own option handler already does).
   `api/test/browser/mainThreadChatSessions.test.ts`'s two proxy doubles carry #40's `$refreshChatSessionContent`, which
   `ExtHostChatSessionsShape` requires since #40.
-- **The server writes a Volter page's configuration and policy itself** (in place of volter-ai/editor's frame proxy
-  rewriting this page). `src/vs/server/node/webClientServer.ts`:
+- **The server writes a Volter page's configuration and policy itself.** `src/vs/server/node/webClientServer.ts`:
   - `webviewEndpoint` puts each webview on its own subdomain of the page's host (`http://{{uuid}}.<host>`), its
     documents served by this server, and the CSP's `frame-src` admits that origin in place of `*.vscode-cdn.net`
     (upstream's again with `--use-test-resolver`);
