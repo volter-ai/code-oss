@@ -2405,8 +2405,7 @@ export interface ExtHostDocumentsShape {
 }
 
 export interface ExtHostDocumentSaveParticipantShape {
-	/** Each listener's answer (`ok`), with its extension and how long it took: who held a save the main thread gave up on. */
-	$participateInSave(resource: UriComponents, reason: SaveReason): Promise<{ readonly ok: boolean; readonly extension: string; readonly ms: number }[]>;
+	$participateInSave(resource: UriComponents, reason: SaveReason): Promise<boolean[]>;
 }
 
 export interface ITextEditorAddData {

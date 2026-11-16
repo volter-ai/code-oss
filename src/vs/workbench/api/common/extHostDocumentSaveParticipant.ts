@@ -48,14 +48,13 @@ export class ExtHostDocumentSaveParticipant implements ExtHostDocumentSavePartic
 		};
 	}
 
-	async $participateInSave(data: UriComponents, reason: SaveReason): Promise<{ readonly ok: boolean; readonly extension: string; readonly ms: number }[]> {
+	async $participateInSave(data: UriComponents, reason: SaveReason): Promise<boolean[]> {
 		const resource = URI.revive(data);
 
 		let didTimeout = false;
 		const didTimeoutHandle = setTimeout(() => didTimeout = true, this._thresholds.timeout);
 
-		// (each listener timed, by its extension, so a save the main thread gave up on can be named from this answer)
-		const results: { readonly ok: boolean; readonly extension: string; readonly ms: number }[] = [];
+		const results: boolean[] = [];
 		try {
 			for (const listener of [...this._callbacks]) { // copy to prevent concurrent modifications
 				if (didTimeout) {
@@ -64,9 +63,8 @@ export class ExtHostDocumentSaveParticipant implements ExtHostDocumentSavePartic
 				}
 				const document = this._documents.getDocument(resource);
 
-				const t1 = Date.now();
 				const success = await this._deliverEventAsyncAndBlameBadListeners(listener, { document, reason: TextDocumentSaveReason.to(reason) });
-				results.push({ ok: success, extension: listener[2].identifier.value, ms: Date.now() - t1 });
+				results.push(success);
 			}
 		} finally {
 			clearTimeout(didTimeoutHandle);

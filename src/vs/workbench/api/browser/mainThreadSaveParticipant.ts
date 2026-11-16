@@ -13,16 +13,12 @@ import { ITextFileSaveParticipant, ITextFileService, ITextFileEditorModel, IText
 import { ExtHostContext, ExtHostDocumentSaveParticipantShape } from '../common/extHost.protocol.js';
 import { IDisposable } from '../../../base/common/lifecycle.js';
 import { raceCancellationError } from '../../../base/common/async.js';
-import { ILogService } from '../../../platform/log/common/log.js';
 
 class ExtHostSaveParticipant implements ITextFileSaveParticipant {
 
 	private readonly _proxy: ExtHostDocumentSaveParticipantShape;
 
-	constructor(
-		extHostContext: IExtHostContext,
-		@ILogService private readonly _logService: ILogService,
-	) {
+	constructor(extHostContext: IExtHostContext) {
 		this._proxy = extHostContext.getProxy(ExtHostContext.ExtHostDocumentSaveParticipant);
 	}
 
@@ -36,28 +32,12 @@ class ExtHostSaveParticipant implements ITextFileSaveParticipant {
 
 		const p = new Promise<void>((resolve, reject) => {
 
-			let answered = false;
-			const asked = Date.now();
-			const participated = this._proxy.$participateInSave(editorModel.resource, context.reason);
 			setTimeout(
-				() => {
-					reject(new Error(localize('timeout.onWillSave', "Aborted onWillSaveTextDocument-event after 1750ms")));
-					if (answered) {
-						return;
-					}
-					// WHICH PARTICIPANT HELD IT, said from the save's own late answer: its listeners by extension and time
-					const resource = editorModel.resource;
-					participated.then(listeners => {
-						const named = listeners.map(({ extension, ms }) => `'${extension}' took ${ms}ms`);
-						this._logService.error(`onWillSaveTextDocument for ${resource.toString()} was aborted after 1750ms; the extension host answered after ` +
-							`${Date.now() - asked}ms, and its listeners were: ${named.join(', ') || 'none'}`);
-					}, () => { /* the extension host went: nothing to name */ });
-				},
+				() => reject(new Error(localize('timeout.onWillSave', "Aborted onWillSaveTextDocument-event after 1750ms"))),
 				1750
 			);
-			participated.then(() => { answered = true; }, () => { answered = true; });
-			participated.then(values => {
-				if (!values.every(({ ok }) => ok)) {
+			this._proxy.$participateInSave(editorModel.resource, context.reason).then(values => {
+				if (!values.every(success => success)) {
 					return Promise.reject(new Error('listener failed'));
 				}
 				return undefined;

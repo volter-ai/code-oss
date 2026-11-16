@@ -9,10 +9,9 @@ import { getActiveWindow } from '../../../../base/browser/dom.js';
 import { IndexedDB } from '../../../../base/browser/indexedDB.js';
 import { DeferredPromise, Promises } from '../../../../base/common/async.js';
 import { toErrorMessage } from '../../../../base/common/errorMessage.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
+import { Emitter } from '../../../../base/common/event.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
-import { generateUuid } from '../../../../base/common/uuid.js';
 import { InMemoryStorageDatabase, isStorageItemsChangeEvent, IStorage, IStorageDatabase, IStorageItemsChangeEvent, IUpdateRequest, Storage } from '../../../../base/parts/storage/common/storage.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { AbstractStorageService, isProfileUsingDefaultStorage, IS_NEW_KEY, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
@@ -60,7 +59,6 @@ export class BrowserStorageService extends AbstractStorageService {
 		private readonly workspace: IAnyWorkspaceIdentifier,
 		private readonly userDataProfileService: IUserDataProfileService,
 		@ILogService private readonly logService: ILogService,
-		private readonly workspaceStorageUrl?: string,
 	) {
 		super({ flushInterval: BrowserStorageService.BROWSER_DEFAULT_FLUSH_INTERVAL });
 
@@ -148,9 +146,7 @@ export class BrowserStorageService extends AbstractStorageService {
 	}
 
 	private async createWorkspaceStorage(): Promise<void> {
-		const workspaceStorageIndexedDB = this.workspaceStorageUrl
-			? await HttpStorageDatabase.create(this.workspaceStorageUrl, this.logService)
-			: await IndexedDBStorageDatabase.createWorkspaceStorage(this.workspace.id, this.logService);
+		const workspaceStorageIndexedDB = await IndexedDBStorageDatabase.createWorkspaceStorage(this.workspace.id, this.logService);
 
 		this.workspaceStorageDatabase = this._register(workspaceStorageIndexedDB);
 		this.workspaceStorage = this._register(new Storage(this.workspaceStorageDatabase));
@@ -250,11 +246,6 @@ export class BrowserStorageService extends AbstractStorageService {
 			this.profileStorageDatabase?.close();
 			this.workspaceStorageDatabase?.close();
 		}
-		// (Volter: an embedder's storage URL is closed in every browser: its close sends what it still owes, which no
-		// write after the unload carries)
-		else if (this.workspaceStorageDatabase instanceof HttpStorageDatabase) {
-			void this.workspaceStorageDatabase.close();
-		}
 
 		// Always dispose to ensure that no timeouts or callbacks
 		// get triggered in this phase.
@@ -340,173 +331,6 @@ class InMemoryIndexedDBStorageDatabase extends InMemoryStorageDatabase implement
 
 	dispose(): void {
 		// No-op
-	}
-}
-
-/**
- * Storage items kept at a URL the embedder serves (`IWorkbenchConstructionOptions.workspaceStorageUrl`).
- * The items are read once; every change is applied in memory and written through, and closing
- * waits for the last write.
- */
-class HttpStorageDatabase extends Disposable implements IIndexedDBStorageDatabase {
-
-	static async create(url: string, logService: ILogService): Promise<IIndexedDBStorageDatabase> {
-		const items = new Map<string, string>();
-		try {
-			const response = await fetch(url, { credentials: 'same-origin' });
-			if (response.ok) {
-				const body = await response.json() as { items?: Record<string, unknown> };
-				for (const [key, value] of Object.entries(body.items ?? {})) {
-					if (typeof value === 'string') {
-						items.set(key, value);
-					}
-				}
-			} else {
-				logService.error(`[storage] ${url} answered ${response.status}; the workspace storage starts empty.`);
-			}
-		} catch (error) {
-			logService.error(`[storage] ${url} could not be read; the workspace storage starts empty.`, toErrorMessage(error));
-		}
-		return new HttpStorageDatabase(url, items, logService);
-	}
-
-	readonly onDidChangeItemsExternal = Event.None;
-
-	private pending: Promise<void> = Promise.resolve();
-	private pendingCount = 0;
-
-	get hasPendingUpdate(): boolean { return this.pendingCount > 0; }
-
-	private constructor(readonly name: string, private readonly items: Map<string, string>, private readonly logService: ILogService) {
-		super();
-	}
-
-	async getItems(): Promise<Map<string, string>> {
-		return new Map(this.items);
-	}
-
-	async getValue(key: string): Promise<string | undefined> {
-		return this.items.get(key);
-	}
-
-	async compareAndSwap(key: string, expectedValue: string | undefined, newValue: string): Promise<{ readonly swapped: boolean; readonly currentValue: string | undefined }> {
-		const currentValue = this.items.get(key);
-		if (currentValue !== expectedValue) {
-			return { swapped: false, currentValue };
-		}
-		await this.updateItems({ insert: new Map([[key, newValue]]) });
-		return { swapped: true, currentValue: newValue };
-	}
-
-	/** The changes not yet written: each write sends them all, and a write the server refuses gives its changes back
-	 *  here, under any made since, so the next write carries them. */
-	private readonly unwrittenInserts = new Map<string, string>();
-	private readonly unwrittenDeletes = new Set<string>();
-
-	updateItems(request: IUpdateRequest): Promise<void> {
-		let changed = false;
-		for (const [key, value] of request.insert ?? []) {
-			this.items.set(key, value);
-			this.unwrittenInserts.set(key, value);
-			this.unwrittenDeletes.delete(key);
-			changed = true;
-		}
-		for (const key of request.delete ?? []) {
-			this.items.delete(key);
-			this.unwrittenInserts.delete(key);
-			this.unwrittenDeletes.add(key);
-			changed = true;
-		}
-		if (!changed) {
-			return this.pending;
-		}
-		this.pendingCount++;
-		// Writes are ordered: each one waits for the one before it.
-		this.pending = this.pending.then(() => this.writeUnwritten(false)).finally(() => this.pendingCount--);
-		return this.pending;
-	}
-
-	/** One write of every change not yet written. A refused or unreachable write is answered for that write, in the
-	 *  server's words: while the window lives it is a warning and its changes are given back, under any made since, for
-	 *  the next write to carry; at the close nothing carries them after, so it is an error. */
-	private async writeUnwritten(closing: boolean): Promise<void> {
-		const insert = Object.fromEntries(this.unwrittenInserts);
-		const remove = [...this.unwrittenDeletes];
-		this.unwrittenInserts.clear();
-		this.unwrittenDeletes.clear();
-		if (remove.length === 0 && Object.keys(insert).length === 0 && !closing) {
-			return;
-		}
-		const refused = (why: string) => {
-			for (const [key, value] of Object.entries(insert)) {
-				if (!this.unwrittenInserts.has(key) && !this.unwrittenDeletes.has(key)) { this.unwrittenInserts.set(key, value); }
-			}
-			for (const key of remove) {
-				if (!this.unwrittenInserts.has(key)) { this.unwrittenDeletes.add(key); }
-			}
-			const count = Object.keys(insert).length + remove.length;
-			if (closing) {
-				this.logService.error(`[storage] ${this.name} did not take the closing window's last write of ${count} change(s), which are lost: ${why}`);
-			} else {
-				this.logService.warn(`[storage] ${this.name} did not take a write of ${count} change(s), which the next write carries: ${why}`);
-			}
-		};
-		this.inFlight = { insert, remove };
-		try {
-			const response = await fetch(this.name, {
-				method: 'POST',
-				credentials: 'same-origin',
-				headers: { 'Content-Type': 'application/json' },
-				// (the close's write says it is this window's last, so the URL can let go of the window's numbering once every
-				// earlier write of it has arrived)
-				body: JSON.stringify({ insert, delete: remove, writer: this.writer, sequence: ++this.sequence, ...(closing ? { closing: true } : {}) }),
-				// A write started while the page unloads still reaches the server.
-				keepalive: true,
-			});
-			if (!response.ok) {
-				const text = await response.text().catch(() => '');
-				let words = text;
-				try { const said = (JSON.parse(text) as { error?: unknown } | null)?.error; if (typeof said === 'string') { words = said; } } catch { /* not JSON: its text */ }
-				refused(`it answered ${response.status}${words ? `: ${words}` : ' without saying why'}`);
-			}
-		} catch (error) {
-			refused(`it could not be reached: ${toErrorMessage(error)}`);
-		} finally {
-			this.inFlight = undefined;
-		}
-	}
-
-	async optimize(): Promise<void> { }
-
-	/** This window's writes, numbered: the close's write and a write still in flight are two requests in no fixed
-	 *  order, and the URL skips one older than a write of this window it has already applied (its `writer` and
-	 *  `sequence`), so an older write never lands over a newer one. */
-	private readonly writer = generateUuid();
-	private sequence = 0;
-
-	/** The write being made, whose changes are given back if it is refused. */
-	private inFlight: { readonly insert: Record<string, string>; readonly remove: readonly string[] } | undefined;
-
-	/**
-	 * The window closes (its unload, where no write after this one carries anything and no answer to an earlier one
-	 * arrives in time): what is still owed is sent at once, the write in flight's changes under every change not yet
-	 * written, since that write may yet be refused. A refusal of this last write is an error.
-	 */
-	async close(): Promise<void> {
-		const owed = this.inFlight;
-		if (owed) {
-			for (const [key, value] of Object.entries(owed.insert)) {
-				if (!this.unwrittenInserts.has(key) && !this.unwrittenDeletes.has(key)) { this.unwrittenInserts.set(key, value); }
-			}
-			for (const key of owed.remove) {
-				if (!this.unwrittenInserts.has(key)) { this.unwrittenDeletes.add(key); }
-			}
-		}
-		await this.writeUnwritten(true);
-	}
-
-	async clear(): Promise<void> {
-		await this.updateItems({ delete: new Set(this.items.keys()) });
 	}
 }
 

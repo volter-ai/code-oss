@@ -73,6 +73,10 @@ export const vscodeWebResourceIncludes = [
 	// Volter's harness Chat: its packaged agent logos
 	'out-build/vs/workbench/contrib/chat/browser/volterHarness/media/*.{svg,png}',
 
+	// Volter's editor kit and product half: their media
+	'out-build/vs/workbench/contrib/volter/browser/media/**',
+	'out-build/vs/workbench/contrib/volterProduct/browser/media/**',
+
 	// Welcome
 	'out-build/vs/workbench/contrib/welcomeGettingStarted/common/media/**/*.{svg,png}',
 	'out-build/vs/workbench/contrib/welcomeOnboarding/browser/media/*.svg',

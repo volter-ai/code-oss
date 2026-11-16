@@ -483,4 +483,9 @@ import './contrib/editTelemetry/browser/editTelemetry.contribution.js';
 // Opener
 import './contrib/opener/browser/opener.contribution.js';
 
+// Volter: the editor's product half registers, then its kit reads it, after every contribution above so the kit's
+// commands are registered last (volter-ai/editor's scripts/workbench/overlay.mjs copies both trees in)
+import './contrib/volterProduct/browser/product.contribution.js';
+import './contrib/volter/browser/volter.contribution.js';
+
 //#endregion

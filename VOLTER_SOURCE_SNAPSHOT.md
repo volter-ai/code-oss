@@ -117,18 +117,6 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `VSCODE_EXTHOST_IPC_READY` and ends the earlier one, so the host takes the connection the client is still on;
   `src/vs/base/parts/ipc/node/ipc.net.ts` ends a drain with an empty write's callback, so a reply still in flight no
   longer holds the reconnection.
-- **Workspace storage can live at an embedder's URL.** `IWorkbenchConstructionOptions.workspaceStorageUrl`
-  (`src/vs/workbench/browser/web.api.ts`), passed by `web.main.ts` to `BrowserStorageService`, whose
-  `HttpStorageDatabase` (`src/vs/workbench/services/storage/browser/storageService.ts`) implements
-  `IIndexedDBStorageDatabase` over `GET`/`POST` of that URL. Used by the editor's `frame-proxy.ts` and the limited
-  view's `boot.ts`. A write the URL refuses (or that can't reach it) is answered for that write: a warning in the
-  server's words, and its changes are given back, under any made since, for the next write to carry (EGG24). Its close,
-  which `BrowserStorageService.close` (the window's shutdown) now calls for it in every browser, not only Safari, sends
-  at once what is still owed (the write in flight's changes under every change not yet written), and a refusal of that
-  last write is an error, since nothing carries it after. Each write carries the window's `writer` id and a
-  `sequence`, and the URL skips a write older than one of that window it has already applied, so the close's write and
-  one still in flight never land out of order. The close's write is always sent, marked `closing`, so the URL can let
-  go of the window's numbering once every earlier write of it has arrived.
 - **An `ObservableMemento` does not echo its own or a sibling's write.**
   `src/vs/platform/observable/common/observableMemento.ts` remembers the stored bytes and ignores a storage event that
   carries them.
@@ -199,6 +187,20 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   session-content catches skip `isCancellationError`, as its own option handler already does).
   `api/test/browser/mainThreadChatSessions.test.ts`'s two proxy doubles carry #40's `$refreshChatSessionContent`, which
   `ExtHostChatSessionsShape` requires since #40.
+- **The server writes a Volter page's configuration and policy itself.** `src/vs/server/node/webClientServer.ts`:
+  - `webviewEndpoint` puts each webview on its own subdomain of the page's host (`http://{{uuid}}.<host>`), its
+    documents served by this server, and the CSP's `frame-src` admits that origin in place of `*.vscode-cdn.net`
+    (upstream's again with `--use-test-resolver`);
+  - `initialColorTheme` and the page's import map come from the product (`IProductConfiguration`'s
+    `initialColorTheme` and `importMap`, `src/vs/base/common/product.ts`, which volter-ai/editor's overlay writes into
+    `product.json`); both pages (`workbench.html`, `workbench-dev.html`)
+    carry the map in `vscode-workbench-import-map` and add it as their one import map before any module loads, and say
+    the product's `color-scheme` before styles load;
+  - the CSP admits loopback pages a project runs (`frame-src`), loopback http, `blob:` and `data:` (`connect-src`), and
+    `blob:` media (`media-src`).
+- **A sources page runs its server's product.** Out of sources the server passes its whole product as the page's
+  `productConfiguration` (`webClientServer.ts`); `workbench-dev.html` sets it as `_VSCODE_PRODUCT_JSON`, which
+  `product.ts`'s web fallback assigns over its defaults, in the page and the workers it is handed to.
 
 Build edits a rebase also redoes:
 
@@ -239,7 +241,17 @@ and `chatCommandContentPart.ts`), which #40 removes (FK2).
 The chat patches import Volter's harness Chat modules from
 `src/vs/workbench/contrib/chat/browser/volterHarness/` (`harnessChatSources`), in this repository.
 
-`patchSourcesProduct` stays in the overlay: it writes per-target build configuration.
+The overlay's last source edits are this repository's too, and the overlay copies trees and writes `product.json`
+only:
+
+- `workbench.common.main.ts` imports the editor's product half, then its kit
+  (`contrib/volterProduct/browser/product.contribution.js`, `contrib/volter/browser/volter.contribution.js`), after
+  every other contribution; `workbench.web.main.ts` imports the limited view's folder provider
+  (`contrib/volterView/browser/volterView.contribution.js`), which does nothing in a page that publishes no view store.
+  This repository compiles with those trees overlaid.
+- `build/gulpfile.vscode.web.ts`'s `vscodeWebResourceIncludes` and `build/next/index.ts`'s `webResourcePatterns` list the
+  kit's and the product half's `media`.
+- The page's import map and the sources page's product: above.
 
 `extensions/copilot` and `extensions/vscode-api-tests` are deleted in this fork, which keeps `build/npm/dirs.ts`,
 `build/gulpfile.extensions.ts` and the REH's Copilot ripgrep shim from reaching for them, and the root `compile` and

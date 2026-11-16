@@ -141,17 +141,26 @@ export function createNlsUrl(nlsBaseUrl: string, commit: string | undefined, ver
 	return `${nlsBaseUrl}${commit}/${version}/${encodeURIComponent(locale)}/nls.messages.js`;
 }
 
+/**
+ * Volter: pages a project runs on this machine (a dev server on its own port, framed by its plugin), and the
+ * processes it talks to (a room server's plain http): loopback http, any port, and nothing beyond this machine.
+ */
+const LOOPBACK_FRAMES = 'http://*.localhost:* http://localhost:* http://127.0.0.1:*';
+const LOOPBACK_CONNECTIONS = 'http://127.0.0.1:* http://localhost:*';
+
 export function createWorkbenchContentSecurityPolicy(scriptNonce: string, nlsBaseUrl: string | undefined, remoteAuthority: string, useTestResolver: boolean): string {
 	return [
 		'default-src \'self\';',
 		'img-src \'self\' https: data: blob:;',
-		'media-src \'self\';',
+		'media-src \'self\' blob:;',
 		`script-src 'self' 'unsafe-eval' ${nlsBaseUrl ?? ''} blob: 'nonce-${scriptNonce}' '${webWorkerExtensionHostIframeScriptSHA}' 'sha256-/r7rqQ+yrxt57sxLuQ6AMYcy/lUpvAIzHjIJt/OeLWU=' ${useTestResolver ? '' : `http://${remoteAuthority}`};`,  // the sha is the same as in src/vs/workbench/services/extensions/worker/webWorkerExtensionHostIframe.html
 		'child-src \'self\';',
-		`frame-src 'self' https://*.vscode-cdn.net data:;`,
+		// the webviews' origin (`webviewEndpoint`)
+		`frame-src 'self' ${useTestResolver ? 'https://*.vscode-cdn.net' : `http://*.${remoteAuthority}`} data: ${LOOPBACK_FRAMES};`,
 		'worker-src \'self\' data: blob:;',
 		'style-src \'self\' \'unsafe-inline\';',
-		'connect-src \'self\' ws: wss: https:;',
+		// `blob:` and `data:`: a glTF's textures and embedded buffers, read from bytes already in the page
+		`connect-src 'self' ws: wss: https: blob: data: ${LOOPBACK_CONNECTIONS};`,
 		'font-src \'self\' blob:;',
 		'manifest-src \'self\';'
 	].join(' ');
@@ -407,6 +416,9 @@ export class WebClientServer {
 		};
 
 		if (!this._environmentService.isBuilt) {
+			// Volter: a sources page takes this server's product whole (`workbench-dev.html` hands it to `product.ts`), as
+			// a built page's bundle carries its own
+			Object.assign(productConfiguration, { ...this._productService, ...productConfiguration });
 			try {
 				const productOverrides = JSON.parse((await promises.readFile(join(APP_ROOT, 'product.overrides.json'))).toString());
 				Object.assign(productConfiguration, productOverrides);
@@ -424,7 +436,10 @@ export class WebClientServer {
 			folderUri: resolveWorkspaceURI(this._environmentService.args['default-folder']),
 			workspaceUri: resolveWorkspaceURI(this._environmentService.args['default-workspace']),
 			productConfiguration,
-			callbackRoute: callbackRoute
+			callbackRoute: callbackRoute,
+			// Volter: each webview on its own subdomain of the page's host, its documents served by this server
+			webviewEndpoint: useTestResolver ? undefined : `http://{{uuid}}.${remoteAuthority}${staticRoute}/out/vs/workbench/contrib/webview/browser/pre/`,
+			initialColorTheme: this._productService.initialColorTheme
 		};
 
 		const cookies = cookie.parse(req.headers.cookie || '');
@@ -445,7 +460,9 @@ export class WebClientServer {
 			WORKBENCH_WEB_BASE_URL: staticRoute,
 			WORKBENCH_NLS_URL,
 			WORKBENCH_NLS_FALLBACK_URL: `${staticRoute}/out/nls.messages.js`,
-			WORKBENCH_SCRIPT_NONCE: scriptNonce
+			WORKBENCH_SCRIPT_NONCE: scriptNonce,
+			WORKBENCH_IMPORT_MAP: asJSON(this._productService.importMap ?? { imports: {} }),
+			WORKBENCH_COLOR_SCHEME: this._productService.initialColorTheme?.themeType ?? 'normal'
 		};
 
 		// DEV ---------------------------------------------------------------------------------------
