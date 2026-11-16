@@ -65,8 +65,8 @@ export class VolterWindowChannel extends Disposable implements IServerChannel<Re
 		private readonly logService: ILogService,
 	) {
 		super();
-		// (the session answers each report once it has taken it, in order; a session gone answers none, so its channel's
-		// end answers them all)
+		// (the session answers each report once it has taken it, in order; a session gone takes this server with it,
+		// server-main.ts's `disconnect`)
 		const answered = (message: { answered?: number; refused?: string | null; locked?: string }) => {
 			const report = this.unanswered.get(message.answered ?? -1);
 			if (report === undefined) { return; }
@@ -74,13 +74,8 @@ export class VolterWindowChannel extends Disposable implements IServerChannel<Re
 			if (message.refused) { this.logService.warn(`[volterWindow] the session refused a window's report: ${message.refused}`); }
 			report(message.locked);
 		};
-		const gone = () => {
-			for (const report of this.unanswered.values()) { report(undefined); }
-			this.unanswered.clear();
-		};
 		process.on('message', answered);
-		process.on('disconnect', gone);
-		this._register({ dispose: () => { process.off('message', answered); process.off('disconnect', gone); } });
+		this._register({ dispose: () => process.off('message', answered) });
 		this._register(ipcServer.onDidRemoveConnection(client => {
 			const connection = this.ids.get(client.ctx);
 			if (connection === undefined || !this.announced.delete(connection)) { return; }

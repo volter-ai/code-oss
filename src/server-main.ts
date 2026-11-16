@@ -52,6 +52,18 @@ if (shouldSpawnCli) {
 } else {
 	installServerProcessExitDiagnostics();
 
+	// A server started with a Node IPC channel (the Volter session's) ends with the process that started it: the
+	// channel's `disconnect`, Node's own event for a forked child whose parent went, or a channel already closed by the
+	// time this runs. It exits as a hangup (128 + SIGHUP), as the signals below do, never 0, the lifetime's own exit
+	if (process.send) {
+		const parentGone = () => process.exit(128 + os.constants.signals.SIGHUP);
+		if (process.connected) {
+			process.once('disconnect', parentGone);
+		} else {
+			parentGone();
+		}
+	}
+
 	let _remoteExtensionHostAgentServer: IServerAPI | null = null;
 	let _remoteExtensionHostAgentServerPromise: Promise<IServerAPI> | null = null;
 	const getRemoteExtensionHostAgentServer = () => {

@@ -175,7 +175,11 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   server gave it a Node IPC channel, as the Volter session does). The window announces itself and its lifecycle on the
   channel. The server says each, and the connection's permanent end (the IPC server's `onDidRemoveConnection`), to the
   session on that IPC channel (`process.send`), which answers each report once it has taken it. The connection's end
-  is its Disconnect or the end of the reconnection grace, which nothing tells apart.
+  is its Disconnect or the end of the reconnection grace, which nothing tells apart. A server started with that IPC
+  channel exits at the channel's `disconnect`, or at once if the channel is already closed (`server-main.ts`'s server
+  branch, before anything loads), Node's own event for a forked child whose parent went, with 128 + SIGHUP, never the
+  lifetime's 0, so a session killed outright takes its server with it, and its windows meet Code-OSS's own "Cannot
+  reconnect".
 - **A window's whole-file write is said from its own connection** (volter-ai/editor's #881 cut). The file channel
   (`RemoteAgentFileSystemProviderChannel`, `remoteFileSystemProviderServer.ts`) makes each `writeFile` call through a
   `writing` hook with the call's connection context; `volterWindowChannel.ts` says `writing` to the session before the
