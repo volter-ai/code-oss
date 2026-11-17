@@ -4,7 +4,7 @@
  *  Code-OSS owns the composer, transcript, toolbar, menus and session list; the bundled
  *  `supercode-frontend-vscode` extension adapts the runtime's protocol; the editor host owns
  *  runtime lifecycle (`packages/chat/serving/frontend-controls.ts`). These are the few
- *  doors this Code-OSS pin does not give an extension session provider on its own.
+ *  commands this Code-OSS pin does not give an extension session provider on its own.
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../../base/common/lifecycle.js';
@@ -71,7 +71,7 @@ registerAction2(class extends Action2 {
 // THE FOCUSED CONVERSATION, told to the session provider (`supercode.frontend.focusSession`), which reads it for its
 // controls and for which conversation a shown one is read-only beside. Opening a conversation and making it the one
 // the runtime runs are the provider's own, in its `provideChatSessionContent` (`volter.chat.sessionGateCapability`
-// below): the workbench keeps no gate of its own.
+// below): the workbench refuses no open of its own.
 class HarnessChatFocus extends Disposable {
 	static readonly ID = 'volter.harnessChatFocus';
 	constructor(
@@ -99,9 +99,10 @@ registerWorkbenchContribution2(HarnessChatFocus.ID, HarnessChatFocus, WorkbenchP
 
 // Versioned support for the session provider owning a conversation's open and its read-only state: the workbench asks
 // for a held session's content again on its provider's `onDidChangeChatSessionContent`, draws content without a
-// `requestHandler` read-only with its `readOnlyMessage`, and keeps no open gate of its own.
+// `requestHandler` read-only with its `readOnlyMessage`, and refuses no open of its own. (The command's id is the
+// one the bundled `supercode-frontend-vscode` asks for.)
 registerAction2(class extends Action2 {
-	constructor() { super({ id: 'volter.chat.sessionGateCapability', title: localize2('sessionGateCapability', 'Session Provider Gate Capability'), f1: false }); }
+	constructor() { super({ id: 'volter.chat.sessionGateCapability', title: localize2('sessionGateCapability', 'Session Provider Owns Opening Capability'), f1: false }); }
 	run() { return { version: 1 }; }
 });
 
