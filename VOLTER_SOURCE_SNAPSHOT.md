@@ -31,6 +31,11 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   (`.hosts-content`, which also places and sizes the element, `.titlebar-hosted-content`). The element stands in place
   of the left and center content, or after them with `keepMenus`.
   Used by the editor's `volter.contribution.ts` for the page's header.
+- **A product names the views a new workspace opens on.** `IProductConfiguration.defaultLayout`
+  (`src/vs/base/common/product.ts`), which `src/vs/server/node/webClientServer.ts` hands the page as the embedder's
+  `IWorkbenchConstructionOptions.defaultLayout`; Code-OSS's layout opens those views, and restores their sidebar
+  container, only for a new workspace (`layout.ts`'s `getDefaultLayoutViews`). volter-ai/editor's overlay writes it
+  into `product.json` from the product's layout.
 - **An editor group can hide its own tab row.**
   `IEditorGroup.tabsHidden` and `setTabsHidden()` in
   `src/vs/workbench/services/editor/common/editorGroupsService.ts`, a `Tabs`

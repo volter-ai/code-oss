@@ -133,6 +133,9 @@ export interface IProductConfiguration {
 	 *  color scheme it paints before its theme loads. */
 	readonly importMap?: { readonly imports: { readonly [specifier: string]: string } };
 	readonly initialColorTheme?: { readonly themeType: 'dark' | 'light' };
+	/** Volter: the views a new workspace opens on, which the server hands the page as the embedder's
+	 *  `IWorkbenchConstructionOptions.defaultLayout` (`webClientServer.ts`). */
+	readonly defaultLayout?: { readonly views: readonly { readonly id: string }[] };
 	readonly target?: string;
 	readonly nlsCoreBaseUrl?: string;
 
