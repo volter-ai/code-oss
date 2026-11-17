@@ -24,6 +24,12 @@ publication nor editor behavior.
 Each change the fork makes to upstream files (not build or release steps), so a
 rebase onto a newer Code-OSS can redo them as a checklist:
 
+- **A product names the views a new workspace opens on.** `IProductConfiguration.defaultLayout`
+  (`src/vs/base/common/product.ts`), which `src/vs/server/node/webClientServer.ts` hands the page as the embedder's
+  `IWorkbenchConstructionOptions.defaultLayout`; Code-OSS's layout opens those views, and restores their sidebar
+  container, only for a new workspace (`layout.ts`'s `getDefaultLayoutViews`). volter-ai/editor's overlay writes it
+  into `product.json` from the product's layout.
+
 - **An editor group can hide its own tab row** (volter-ai/code-oss#12).
   `IEditorGroup.tabsHidden` and `setTabsHidden()` in
   `src/vs/workbench/services/editor/common/editorGroupsService.ts`, a `Tabs`

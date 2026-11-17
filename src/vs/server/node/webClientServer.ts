@@ -439,7 +439,10 @@ export class WebClientServer {
 			callbackRoute: callbackRoute,
 			// Volter: each webview on its own subdomain of the page's host, its documents served by this server
 			webviewEndpoint: useTestResolver ? undefined : `http://{{uuid}}.${remoteAuthority}${staticRoute}/out/vs/workbench/contrib/webview/browser/pre/`,
-			initialColorTheme: this._productService.initialColorTheme
+			initialColorTheme: this._productService.initialColorTheme,
+			// Volter: the product's views for a new workspace, Code-OSS's own embedder option (`layout.ts`'s
+			// `getDefaultLayoutViews`, applied only to a new workspace without `force`)
+			defaultLayout: this._productService.defaultLayout
 		};
 
 		const cookies = cookie.parse(req.headers.cookie || '');
