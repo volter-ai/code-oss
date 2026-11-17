@@ -33,7 +33,7 @@ export class MainThreadConsole implements MainThreadConsoleShape {
 		if (this._isExtensionDevTestFromCli || isDevConsoleLogForwarderRegistered()) {
 			// In development scenarios, or where the window's console goes to the log service, log all extension host
 			// console output to the log service, and none to the local console, which would forward it again.
-			logRemoteEntry(this._logService, entry);
+			logRemoteEntry(this._logService, entry, this._isExtensionDevTestFromCli ? null : 'Extension Host');
 		} else {
 			// Log to the log service only errors and log everything to local console
 			logRemoteEntryIfError(this._logService, entry, 'Extension Host');

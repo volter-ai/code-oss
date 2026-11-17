@@ -4,14 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IRemoteConsoleLog, parse } from '../../../../base/common/console.js';
-import { ILogService } from '../../../../platform/log/common/log.js';
+import { format, ILogService } from '../../../../platform/log/common/log.js';
 
 export function logRemoteEntry(logService: ILogService, entry: IRemoteConsoleLog, label: string | null = null): void {
 	const args = parse(entry).args;
-	let firstArg = args.shift();
-	if (typeof firstArg !== 'string') {
-		return;
-	}
+	// (a line whose first argument isn't a format string is logged as the console would print it)
+	let firstArg: string = typeof args[0] === 'string' ? args.shift() : format(args.splice(0));
 
 	if (!entry.severity) {
 		entry.severity = 'info';
@@ -28,6 +26,9 @@ export function logRemoteEntry(logService: ILogService, entry: IRemoteConsoleLog
 	}
 
 	switch (entry.severity) {
+		case 'debug':
+			logService.debug(firstArg, ...args);
+			break;
 		case 'log':
 		case 'info':
 			logService.info(firstArg, ...args);
