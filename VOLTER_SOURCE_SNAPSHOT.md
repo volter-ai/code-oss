@@ -24,7 +24,7 @@ publication nor editor behavior.
 Each change the fork makes to upstream files (not build or release steps), so a
 rebase onto a newer Code-OSS can redo them as a checklist:
 
-- **An editor group can hide its own tab row** (volter-ai/code-oss#12).
+- **An editor group can hide its own tab row.**
   `IEditorGroup.tabsHidden` and `setTabsHidden()` in
   `src/vs/workbench/services/editor/common/editorGroupsService.ts`, a `Tabs`
   region in `src/vs/workbench/browser/parts/editor/editorGroupView.ts` (with the
@@ -112,7 +112,7 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   `AbstractExtensionService`'s queue, and each waits for the extension host to take the one before
   (`ExtensionHostManager.deltaExtensions`), so packages installed one call each registered only after the host
   started plus a round trip per package. Used by the editor's `volterExtensions.ts`.
-- **The extension host survives a slow start and a drained socket** (W71).
+- **The extension host survives a slow start and a drained socket**.
   `src/vs/server/node/extensionHostConnection.ts` holds a connection that arrives before the host said
   `VSCODE_EXTHOST_IPC_READY` and ends the earlier one, so the host takes the connection the client is still on;
   `src/vs/base/parts/ipc/node/ipc.net.ts` ends a drain with an empty write's callback, so a reply still in flight no
@@ -137,7 +137,7 @@ rebase onto a newer Code-OSS can redo them as a checklist:
 - **The built-in agent host is off**: `VolterAgentHostEnablementService` (`volterHarness/volterChat.services.ts`),
   registered in place of `AgentHostEnablementService` from `workbench.web.main.ts`.
 - **A session's content is read-only in its provider's words, and is asked for again on its provider's change**
-  (proposal `chatSessionsProvider`; volter-ai/code-oss#40, FK1). The proposal's `ChatSession.readOnlyMessage` and
+  (proposal `chatSessionsProvider`). The proposal's `ChatSession.readOnlyMessage` and
   `ChatSessionContentProvider.onDidChangeChatSessionContent` (`src/vscode-dts/vscode.proposed.chatSessionsProvider.d.ts`).
   - `extHost.protocol.ts`: `$onDidChangeChatSessionContent`, `$refreshChatSessionContent` and
     `IChatSessionContentRefreshDto`.
@@ -149,15 +149,14 @@ rebase onto a newer Code-OSS can redo them as a checklist:
     `IChatModel` (`chatModel.ts`, and `mockChatModel.ts`) and `chatServiceImpl.ts`'s session load.
   - `ChatReadOnlyBanner.setMessage` (`chatReadOnlyBanner.ts`), set by `chatWidget.ts` from the model's
     `readOnlyMessage`.
-  - A content with no `requestHandler` is read-only, as the proposal says. The workbench keeps no open gate of its own,
+  - A content with no `requestHandler` is read-only, as the proposal says. The workbench refuses no open of its own,
     and `volter.chat.sessionGateCapability` (`volterHarness/volterChat.ts`) answers `{ version: 1 }` so a provider knows
     it.
 - **A session's previous input states are disposed after its new content arrives, never the one handed to it**
   (`extHostChatSessions.ts` `$provideChatSessionContent`: `_disposeInputStatesForResource(…, inputState)` in a
-  `finally` around `provideChatSessionContent`; volter-ai/code-oss#40).
+  `finally` around `provideChatSessionContent`).
 - **A widget locked to an agent inserts no mention of it** (`chatInputEditorContrib.ts`: a suggestion of the widget's
-  own `lockedAgentId` is skipped, for any agent; volter-ai/code-oss#40, FK2, in place of `patchHarnessDraftAgentMention`'s
-  Supercode-only rule).
+  own `lockedAgentId` is skipped, for any agent).
 - **A Volter editor window's presence travels on its management connection** (`src/vs/server/node/volterWindowChannel.ts`,
   registered in `serverServices.ts` as the server registers `agentHostProxy`, only where the process that started the
   server gave it a Node IPC channel, as the Volter session does). The window announces itself and its lifecycle on the
@@ -180,17 +179,17 @@ rebase onto a newer Code-OSS can redo them as a checklist:
   said as a `wrote` that did not land. Where the session answers `writing` as locked (another window holds the file's
   lock), the write is not made and throws
   `FileSystemProviderErrorCode.FileWriteLocked` in the session's words.
-- **The web lifecycle says an expected shutdown's reason** (volter-ai/editor's PR 8a review). The web
+- **The web lifecycle says an expected shutdown's reason.** The web
   `BrowserLifecycleService` (`services/lifecycle/browser/lifecycleService.ts`) fires `onBeforeShutdown` and
   `onWillShutdown` with the reason an expected shutdown named (`withExpectedShutdown`, as `BrowserHostService.reload`
   names `RELOAD`), not always `QUIT`. An upstream bug.
-- **A conversation is opened on the Chat view's own answer to its load** (EGG21). `volter.chat.openSession` and
+- **A conversation is opened on the Chat view's own answer to its load.** `volter.chat.openSession` and
   `volter.chat.send`'s named conversation (`volterHarness/volterChat.ts`, `openConversation`) wait on
   `ChatViewPane.loadSession`'s own return (unchanged from upstream), never on the widget a load leaves behind. A
   superseded load's cancellation is not logged as an error (`api/browser/mainThreadChatSessions.ts`, both of its
   session-content catches skip `isCancellationError`, as its own option handler already does).
-  `api/test/browser/mainThreadChatSessions.test.ts`'s two proxy doubles carry #40's `$refreshChatSessionContent`, which
-  `ExtHostChatSessionsShape` requires since #40.
+  `api/test/browser/mainThreadChatSessions.test.ts`'s two proxy doubles carry `$refreshChatSessionContent`, which
+  `ExtHostChatSessionsShape` requires.
 - **The server writes a Volter page's configuration and policy itself.** `src/vs/server/node/webClientServer.ts`:
   - `webviewEndpoint` puts each webview on its own subdomain of the page's host (`http://{{uuid}}.<host>`), its
     documents served by this server, and the CSP's `frame-src` admits that origin in place of `*.vscode-cdn.net`
@@ -220,16 +219,12 @@ Build edits a rebase also redoes:
   outside watch; `build/lib/optimize.ts` bundles one entry point at a time and minifies one file at a time (a
   `Transform` in place of `es.map`); `build/npm/postinstall.ts` runs the JS-only installs one at a time.
 
-## Patches moved from the editor overlay
+## Patch commits
 
-On `main`, on top of `601de14d6bef3347a3f27b50ac79f01fc056f806` (cut first from `d6d53660ed1e`,
-then rebased onto main, which only adds `.github/workflows`; the editor's
-`packages/editor-core/workbench/FORK.json` pins this branch's head). Each commit is one patch function from
-`volter-ai/editor`'s `scripts/workbench/overlay.mjs` at editor commit
-`0629f5a793e47f4266f853e849717b41387bdd1a`, applied alone in this order, leaves first, so the
-overlay can drop it.
+Commits on `main` that each carry one patch, in this order, leaves first (the editor's
+`packages/editor-core/workbench/FORK.json` pins a commit on `main`):
 
-| Commit | Overlay function | Files |
+| Commit | Patch | Files |
 |---|---|---|
 | `6b84ccf6fdc8` | `patchChatSetupWelcome` | `src/vs/workbench/contrib/chat/browser/viewsWelcome/chatViewWelcomeController.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatWidget.ts` |
 | `298969b7204a` | `patchNativeChat` | `src/vs/workbench/api/common/extHostChatSessions.ts`, `src/vs/workbench/api/common/extHostTypeConverters.ts`, `src/vs/workbench/contrib/chat/browser/actions/chatNewActions.ts`, `src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupContributions.ts`, `src/vs/workbench/contrib/chat/browser/chatStatus/chatStatusEntry.ts`, `src/vs/workbench/contrib/chat/browser/viewsWelcome/chatViewWelcomeController.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatContentParts/chatConfirmationContentPart.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatListRenderer.ts`, `src/vs/workbench/contrib/chat/browser/widget/chatWidget.ts`, `src/vs/workbench/contrib/chat/common/chatService/chatServiceImpl.ts`, `src/vs/workbench/workbench.web.main.ts`, `src/vscode-dts/vscode.proposed.chatSessionsProvider.d.ts` |
@@ -241,12 +236,12 @@ overlay can drop it.
 | `aede13df14f0` | `main()` inline: vscode-api-tests out of the dev compile | `build/gulpfile.extensions.ts` |
 | `cc13aa989177` | `harnessChatSources`: Volter's harness Chat modules, beside the patches that import them | `src/vs/workbench/contrib/chat/browser/volterHarness/**`, the imports of the three chat-patch files that still import them (`chatViewWelcomeController.ts`, `chatConfirmationContentPart.ts`, `chatWidget.ts`), `src/vs/workbench/workbench.common.main.ts`, `build/gulpfile.vscode.web.ts` |
 
-**Reverted by volter-ai/code-oss#40 (FK1), not to be redone on a rebase:** `aef57c2e0968` (`patchHarnessMoveActions`),
-`619a7760a07c` (`patchHarnessPassiveViews`), `f95416c09cdc` (`patchHarnessDraftAgentMention`) and `280edb3510b8`
-(`patchHarnessChatNavigation`, with `volterHarness/volterChatNavigation.ts`): the workbench's own gates on a conversation's
-open and its passive views, which the session provider now owns (above). `298969b7204a` (`patchNativeChat`) no longer
-carries the harness answer group (`harnessAnswerGroup` in `chatService.ts`, `annotations.ts`, `extHostTypeConverters.ts`
-and `chatCommandContentPart.ts`), which #40 removes (FK2).
+`aef57c2e0968` (`patchHarnessMoveActions`), `619a7760a07c` (`patchHarnessPassiveViews`), `f95416c09cdc`
+(`patchHarnessDraftAgentMention`) and `280edb3510b8` (`patchHarnessChatNavigation`, with
+`volterHarness/volterChatNavigation.ts`) are reverted on `main`, so a rebase carries neither them nor their reverts: the
+session provider owns a conversation's open and its passive views (above). `main` also removes the harness answer
+group `298969b7204a` (`patchNativeChat`) added (`harnessAnswerGroup` in `chatService.ts`, `annotations.ts`,
+`extHostTypeConverters.ts` and `chatCommandContentPart.ts`).
 
 The chat patches import Volter's harness Chat modules from
 `src/vs/workbench/contrib/chat/browser/volterHarness/` (`harnessChatSources`), in this repository.
