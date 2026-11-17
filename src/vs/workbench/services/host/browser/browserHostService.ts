@@ -640,6 +640,12 @@ export class BrowserHostService extends Disposable implements IHostService {
 		return this.close();
 	}
 
+	async navigate(url: URI): Promise<void> {
+		// (the expected shutdown `openWindow` takes before its own navigation, left in place through the unload)
+		await this.handleExpectedShutdown(ShutdownReason.LOAD);
+		mainWindow.location.assign(url.toString(true));
+	}
+
 	async withExpectedShutdown<T>(expectedShutdownTask: () => Promise<T>): Promise<T> {
 		const previousShutdownReason = this.shutdownReason;
 		try {

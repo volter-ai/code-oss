@@ -6,6 +6,7 @@
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Event } from '../../../../base/common/event.js';
+import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { FocusMode } from '../../../../platform/native/common/native.js';
 import { IWindowOpenable, IOpenWindowOptions, IOpenEmptyWindowOptions, IPoint, IRectangle, IOpenedMainWindow, IOpenedAuxiliaryWindow } from '../../../../platform/window/common/window.js';
@@ -163,6 +164,13 @@ export interface IHostService {
 	 * in progress, attempts to quit the application will not be vetoed with a dialog.
 	 */
 	withExpectedShutdown<T>(expectedShutdownTask: () => Promise<T>): Promise<T>;
+
+	/**
+	 * Leave this window for another address, as {@link openWindow} leaves it for another workspace: the same expected
+	 * shutdown (`ShutdownReason.LOAD`, storage flushed, no close confirmation), then the navigation. A modified working
+	 * copy without a backup still vetoes it. Web only: a desktop window has no other address to move to and refuses.
+	 */
+	navigate(url: URI): Promise<void>;
 
 	//#endregion
 
