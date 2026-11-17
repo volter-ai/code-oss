@@ -9,23 +9,19 @@ import { IEnvironmentService } from '../../../platform/environment/common/enviro
 import { IRemoteConsoleLog, log } from '../../../base/common/console.js';
 import { logRemoteEntry, logRemoteEntryIfError } from '../../services/extensions/common/remoteConsoleUtil.js';
 import { parseExtensionDevOptions } from '../../services/extensions/common/extensionDevOptions.js';
-import { ILogService, isDevConsoleLogForwardingEnabled } from '../../../platform/log/common/log.js';
+import { ILogService, isDevConsoleLogForwarderRegistered } from '../../../platform/log/common/log.js';
 
 @extHostNamedCustomer(MainContext.MainThreadConsole)
 export class MainThreadConsole implements MainThreadConsoleShape {
 
-	private readonly _logAllExtensionHostConsole: boolean;
-	private readonly _logExtensionHostConsoleToLocalConsole: boolean;
+	private readonly _isExtensionDevTestFromCli: boolean;
 
 	constructor(
 		_extHostContext: IExtHostContext,
 		@IEnvironmentService private readonly _environmentService: IEnvironmentService,
 		@ILogService private readonly _logService: ILogService,
 	) {
-		const devOpts = parseExtensionDevOptions(this._environmentService);
-		const isDevConsoleLogForwardingActive = !this._environmentService.isBuilt && isDevConsoleLogForwardingEnabled;
-		this._logAllExtensionHostConsole = devOpts.isExtensionDevTestFromCli || isDevConsoleLogForwardingActive;
-		this._logExtensionHostConsoleToLocalConsole = !devOpts.isExtensionDevTestFromCli && !isDevConsoleLogForwardingActive;
+		this._isExtensionDevTestFromCli = parseExtensionDevOptions(this._environmentService).isExtensionDevTestFromCli;
 	}
 
 	dispose(): void {
@@ -33,12 +29,11 @@ export class MainThreadConsole implements MainThreadConsoleShape {
 	}
 
 	$logExtensionHostMessage(entry: IRemoteConsoleLog): void {
-		if (this._logAllExtensionHostConsole) {
-			// In development scenarios, log all extension host console output to the log service.
-			logRemoteEntry(this._logService, entry);
-			if (this._logExtensionHostConsoleToLocalConsole) {
-				log(entry, 'Extension Host');
-			}
+		// (asked for each message: a window's console forwarder is registered at run time, by the window or its kit)
+		if (this._isExtensionDevTestFromCli || isDevConsoleLogForwarderRegistered()) {
+			// In development scenarios, or where the window's console goes to the log service, log all extension host
+			// console output to the log service, and none to the local console, which would forward it again.
+			logRemoteEntry(this._logService, entry, this._isExtensionDevTestFromCli ? null : 'Extension Host');
 		} else {
 			// Log to the log service only errors and log everything to local console
 			logRemoteEntryIfError(this._logService, entry, 'Extension Host');
