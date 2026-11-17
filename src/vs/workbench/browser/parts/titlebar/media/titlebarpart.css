@@ -100,6 +100,20 @@
 	padding-left: 0;
 }
 
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content > .titlebar-hosted-content {
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 100%;
+	-webkit-app-region: no-drag;
+}
+
+/* After the menu, title and command center (`order` 0 and 1, and later in the document than the center), before the
+   right content. */
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content.hosts-content-with-menus > .titlebar-hosted-content {
+	order: 1;
+	flex: 0 1 auto;
+}
+
 .monaco-workbench .part.titlebar > .titlebar-container.has-center > .titlebar-left {
 	order: 0;
 	width: 20%;
