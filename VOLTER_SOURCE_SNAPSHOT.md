@@ -24,6 +24,13 @@ publication nor editor behavior.
 Each change the fork makes to upstream files (not build or release steps), so a
 rebase onto a newer Code-OSS can redo them as a checklist:
 
+- **A title bar hosts an embedder's element.** `ITitlebarPart.hostContent(element, { keepMenus })` in
+  `src/vs/workbench/browser/parts/titlebar/titlebarPart.ts`, implemented by `BrowserTitlebarPart` and
+  `BrowserTitleService` and by the agent sessions' `TitlebarPart` and `TitleService`
+  (`src/vs/sessions/browser/parts/titlebarPart.ts`), with its rules in `titlebarpart.css`
+  (`.hosts-content`). The element stands in place of the left and center content, or after them with `keepMenus`.
+  Used by the editor's `volter.contribution.ts` for the page's header.
+
 - **An editor group can hide its own tab row** (volter-ai/code-oss#12).
   `IEditorGroup.tabsHidden` and `setTabsHidden()` in
   `src/vs/workbench/services/editor/common/editorGroupsService.ts`, a `Tabs`

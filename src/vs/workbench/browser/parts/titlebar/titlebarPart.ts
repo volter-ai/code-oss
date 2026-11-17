@@ -12,7 +12,7 @@ import { MenuBarVisibility, getTitleBarStyle, getMenuBarVisibility, hasCustomTit
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { StandardMouseEvent } from '../../../../base/browser/mouseEvent.js';
 import { IConfigurationService, IConfigurationChangeEvent } from '../../../../platform/configuration/common/configuration.js';
-import { DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../../services/environment/browser/environmentService.js';
 import { IColorTheme, IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { MODERN_UI_INACTIVE_SHELL_BACKGROUND, MODERN_UI_SHELL_BACKGROUND, TITLE_BAR_ACTIVE_BACKGROUND, TITLE_BAR_ACTIVE_FOREGROUND, TITLE_BAR_INACTIVE_FOREGROUND, TITLE_BAR_INACTIVE_BACKGROUND, TITLE_BAR_BORDER, WORKBENCH_BACKGROUND } from '../../../common/theme.js';
@@ -86,6 +86,13 @@ export interface ITitlebarPart extends IDisposable {
 	 * Adds variables to be supported in the window title.
 	 */
 	registerVariables(variables: ITitleVariable[]): void;
+
+	/**
+	 * Host an embedder's own element in this title bar, in place of the bar's left and center content (its menu,
+	 * title and command center), or after them with `keepMenus`; the right content (layout and window controls)
+	 * stays. Disposing takes the element out and shows the bar's own content again.
+	 */
+	hostContent(element: HTMLElement, options: { readonly keepMenus: boolean }): IDisposable;
 }
 
 export class BrowserTitleService extends MultiWindowParts<BrowserTitlebarPart> implements ITitleService {
@@ -201,6 +208,10 @@ export class BrowserTitleService extends MultiWindowParts<BrowserTitlebarPart> i
 	}
 
 	private readonly variables = new Map<string, ITitleVariable>();
+
+	hostContent(element: HTMLElement, options: { readonly keepMenus: boolean }): IDisposable {
+		return this.mainPart.hostContent(element, options);
+	}
 
 	registerVariables(variables: ITitleVariable[]): void {
 		const newVariables: ITitleVariable[] = [];
@@ -464,6 +475,17 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 	registerVariables(variables: ITitleVariable[]): void {
 		this.windowTitle.registerVariables(variables);
+	}
+
+	hostContent(element: HTMLElement, options: { readonly keepMenus: boolean }): IDisposable {
+		element.classList.add('titlebar-hosted-content');
+		this.rootContainer.classList.add('hosts-content');
+		this.rootContainer.classList.toggle('hosts-content-with-menus', options.keepMenus);
+		this.rootContainer.appendChild(element);
+		return toDisposable(() => {
+			element.remove();
+			this.rootContainer.classList.remove('hosts-content', 'hosts-content-with-menus');
+		});
 	}
 
 	protected override createContentArea(parent: HTMLElement): HTMLElement {
