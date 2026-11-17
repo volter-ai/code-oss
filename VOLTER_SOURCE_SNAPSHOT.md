@@ -24,6 +24,13 @@ publication nor editor behavior.
 Each change the fork makes to upstream files (not build or release steps), so a
 rebase onto a newer Code-OSS can redo them as a checklist:
 
+- **A title bar hosts an embedder's element.** `ITitlebarPart.hostContent(element, { keepMenus })` in
+  `src/vs/workbench/browser/parts/titlebar/titlebarPart.ts`, implemented by `BrowserTitlebarPart` and
+  `BrowserTitleService` and by the agent sessions' `TitlebarPart` and `TitleService`
+  (`src/vs/sessions/browser/parts/titlebarPart.ts`), with its rules in `titlebarpart.css`
+  (`.hosts-content`, which also places and sizes the element, `.titlebar-hosted-content`). The element stands in place
+  of the left and center content, or after them with `keepMenus`.
+  Used by the editor's `volter.contribution.ts` for the page's header.
 - **A product names the views a new workspace opens on.** `IProductConfiguration.defaultLayout`
   (`src/vs/base/common/product.ts`), which `src/vs/server/node/webClientServer.ts` hands the page as the embedder's
   `IWorkbenchConstructionOptions.defaultLayout`; Code-OSS's layout opens those views, and restores their sidebar

@@ -12,7 +12,7 @@ import { hasCustomTitlebar, hasNativeTitlebar, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, T
 import { IContextMenuService } from '../../../platform/contextview/browser/contextView.js';
 import { StandardMouseEvent } from '../../../base/browser/mouseEvent.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
-import { DisposableStore } from '../../../base/common/lifecycle.js';
+import { DisposableStore, IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { IThemeService } from '../../../platform/theme/common/themeService.js';
 import { agentsBackground, agentsPanelForeground } from '../../common/theme.js';
 import { isMacintosh, isWeb, isNative, platformLocale } from '../../../base/common/platform.js';
@@ -136,6 +136,17 @@ export class TitlebarPart extends Part implements ITitlebarPart {
 
 	registerVariables(_variables: ITitleVariable[]): void {
 		// No window title variables in simplified titlebar
+	}
+
+	hostContent(element: HTMLElement, options: { readonly keepMenus: boolean }): IDisposable {
+		element.classList.add('titlebar-hosted-content');
+		this.rootContainer.classList.add('hosts-content');
+		this.rootContainer.classList.toggle('hosts-content-with-menus', options.keepMenus);
+		this.rootContainer.appendChild(element);
+		return toDisposable(() => {
+			element.remove();
+			this.rootContainer.classList.remove('hosts-content', 'hosts-content-with-menus');
+		});
 	}
 
 	updateOptions(_options: { compact: boolean }): void {
@@ -508,6 +519,10 @@ export class TitleService extends MultiWindowParts<TitlebarPart> implements ITit
 		for (const part of this.parts) {
 			part.registerVariables(variables);
 		}
+	}
+
+	hostContent(element: HTMLElement, options: { readonly keepMenus: boolean }): IDisposable {
+		return this.mainPart.hostContent(element, options);
 	}
 
 	private _windowTitle: WindowTitle | undefined;

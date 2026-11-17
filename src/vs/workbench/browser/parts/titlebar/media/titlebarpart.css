@@ -72,6 +72,48 @@
 	align-items: center;
 }
 
+/* An embedder's hosted content (`ITitlebarPart.hostContent`) stands in place of the left and center content, or after
+   them with `keepMenus`; the right content keeps its place at the end. */
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content {
+	padding: 0;
+}
+
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content:not(.hosts-content-with-menus) > .titlebar-left,
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content:not(.hosts-content-with-menus) > .titlebar-center {
+	display: none;
+}
+
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content.hosts-content-with-menus > .titlebar-left {
+	flex: 0 0 auto;
+	width: auto;
+}
+
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content.hosts-content-with-menus.has-center > .titlebar-center {
+	flex: 1 1 auto;
+}
+
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content > .titlebar-right,
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content.has-center > .titlebar-right {
+	order: 2;
+	flex: 0 0 auto;
+	width: auto;
+	padding-left: 0;
+}
+
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content > .titlebar-hosted-content {
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 100%;
+	-webkit-app-region: no-drag;
+}
+
+/* After the menu, title and command center (`order` 0 and 1, and later in the document than the center), before the
+   right content. */
+.monaco-workbench .part.titlebar > .titlebar-container.hosts-content.hosts-content-with-menus > .titlebar-hosted-content {
+	order: 1;
+	flex: 0 1 auto;
+}
+
 .monaco-workbench .part.titlebar > .titlebar-container.has-center > .titlebar-left {
 	order: 0;
 	width: 20%;
