@@ -21,6 +21,7 @@ import { VSBuffer } from '../../../../base/common/buffer.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { showBrowserToast } from '../browser/toasts.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
+import { URI } from '../../../../base/common/uri.js';
 
 class WorkbenchNativeHostService extends NativeHostService {
 
@@ -220,6 +221,10 @@ class WorkbenchHostService extends Disposable implements IHostService {
 
 	async withExpectedShutdown<T>(expectedShutdownTask: () => Promise<T>): Promise<T> {
 		return await expectedShutdownTask();
+	}
+
+	async navigate(url: URI): Promise<void> {
+		throw new Error(`A desktop window has no other address to move to, so it does not go to ${url.toString(true)}.`);
 	}
 
 	//#endregion

@@ -24,6 +24,11 @@ publication nor editor behavior.
 Each change the fork makes to upstream files (not build or release steps), so a
 rebase onto a newer Code-OSS can redo them as a checklist:
 
+- **A window leaves for another address as `openWindow` leaves it.** `IHostService.navigate(url)` in
+  `src/vs/workbench/services/host/browser/host.ts`: `BrowserHostService.navigate` runs its `handleExpectedShutdown
+  (ShutdownReason.LOAD)` and then `mainWindow.location.assign`; the desktop `WorkbenchHostService` and the test double's
+  `TestHostService` (`src/vs/workbench/test/browser/workbenchTestServices.ts`) refuse in words. Used by the editor's
+  `volter.contribution.ts` to take a window to another project's session.
 - **A title bar hosts an embedder's element.** `ITitlebarPart.hostContent(element, { keepMenus })` in
   `src/vs/workbench/browser/parts/titlebar/titlebarPart.ts`, implemented by `BrowserTitlebarPart` and
   `BrowserTitleService` and by the agent sessions' `TitlebarPart` and `TitleService`

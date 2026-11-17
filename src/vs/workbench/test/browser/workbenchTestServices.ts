@@ -1375,6 +1375,10 @@ export class TestHostService implements IHostService {
 		return await expectedShutdownTask();
 	}
 
+	async navigate(url: URI): Promise<void> {
+		throw new Error(`The test host does not navigate (${url.toString(true)}).`);
+	}
+
 	async focus(): Promise<void> { }
 	async moveTop(): Promise<void> { }
 	async getCursorScreenPoint(): Promise<undefined> { return undefined; }
