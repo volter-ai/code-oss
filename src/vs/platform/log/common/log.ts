@@ -87,6 +87,16 @@ export const isDevConsoleLogForwardingEnabled = false
 
 let isConsoleForwarding = false;
 let isLogServiceConsoleEcho = false;
+/** How many console forwarders are registered in this context (`registerDevConsoleLogForwarder`). */
+let consoleForwarders = 0;
+
+/**
+ * Whether this context's console is forwarded to its log service: a reader that would also echo a line it logs to the
+ * console asks this, since the forwarder would take the echo back into the log.
+ */
+export function isDevConsoleLogForwarderRegistered(): boolean {
+	return consoleForwarders > 0;
+}
 
 function getConsoleMethod(method: ConsoleMethod): ConsoleMethodFn {
 	switch (method) {
@@ -157,8 +167,10 @@ export function registerDevConsoleLogForwarder(logService: ILogService): IDispos
 	setConsoleMethod('info', wrappers.info);
 	setConsoleMethod('log', wrappers.log);
 	setConsoleMethod('warn', wrappers.warn);
+	consoleForwarders++;
 
 	return toDisposable(() => {
+		consoleForwarders--;
 		if (console.debug === wrappers.debug) {
 			console.debug = originalConsoleMethods.debug;
 		}
