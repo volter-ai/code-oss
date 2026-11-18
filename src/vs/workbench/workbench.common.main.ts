@@ -482,4 +482,8 @@ import './contrib/editTelemetry/browser/editTelemetry.contribution.js';
 // Opener
 import './contrib/opener/browser/opener.contribution.js';
 
+// VOLTER (overlaid tier — scripts/workbench/overlay.mjs; the product and its look tiers register, then the kit reads them)
+import './contrib/volterProduct/browser/product.contribution.js';
+import './contrib/volter/browser/volter.contribution.js';
+
 //#endregion

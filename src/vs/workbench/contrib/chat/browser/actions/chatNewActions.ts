@@ -19,6 +19,10 @@ import { IViewsService } from '../../../../services/views/common/viewsService.js
 import { ChatContextKeyExprs, ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatEditingSession } from '../../common/editing/chatEditingService.js';
 import { IChatService } from '../../common/chatService/chatService.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { IChatSessionsService } from '../../common/chatSessionsService.js';
+import { getDefaultNewChatSessionTypeAndReason } from '../../common/constants.js';
+import { getChatSessionType } from '../../common/model/chatUri.js';
 import { ChatAgentLocation, ChatModeKind } from '../../common/constants.js';
 import { chatAgentIcon } from '../../common/chatGlyph.js';
 import { ChatViewId, IChatWidgetService } from '../chat.js';
@@ -342,6 +346,19 @@ async function runNewChatAction(
 	const voiceTarget = voiceSessionController.targetSession.get();
 	const currentSession = widget.viewModel?.sessionResource;
 	const dialogService = accessor.get(IDialogService);
+
+	// A non-delegating provider owns creation through chatSessions/newSession.
+	// Dispatch before native confirmation/stop: cancelling its picker must leave
+	// the old conversation, draft and edit-review tabs untouched, just as opening
+	// that provider's contributed creation command directly does.
+	const resolved = getDefaultNewChatSessionTypeAndReason(accessor, {
+		explicitOverride: sessionType,
+		currentSessionType: currentSession ? getChatSessionType(currentSession) : undefined,
+	});
+	if (accessor.get(IChatSessionsService).getChatSessionContribution(resolved.sessionType)?.canDelegate === false) {
+		await accessor.get(ICommandService).executeCommand(`workbench.action.chat.openNewChatSessionExternal.${resolved.sessionType}`);
+		return;
+	}
 
 	const model = widget.viewModel?.model;
 	if (model && !(await handleCurrentEditingSession(model, undefined, dialogService))) {
