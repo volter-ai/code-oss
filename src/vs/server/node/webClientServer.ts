@@ -432,10 +432,12 @@ export class WebClientServer {
 			developmentOptions: {
 				enableSmokeTestDriver: this._environmentService.args['enable-smoke-test-driver'] ? true : undefined,
 				logLevel: this._logService.getLevel(),
-				// Volter: the server's extensions under development (`--extensionDevelopmentPath`), as remote locations: the
-				// workbench takes them as its extension development locations and hands them back to this server's extensions
-				// scanner, which loads them for the remote extension host (`remoteExtensionsScanner.ts`)
-				extensions: this._environmentService.args['extensionDevelopmentPath']?.map(path => URI.from({ scheme: Schemas.vscodeRemote, authority: remoteAuthority, path: URI.file(path).path })),
+				// Volter: the server's extensions under development (`--extensionDevelopmentPath`, each resolved against the
+				// server's working folder, as a relative one is given), as remote locations: the workbench takes them as its
+				// extension development locations and hands them back to this server's extensions scanner, which loads them for
+				// the remote extension host (`remoteExtensionsScanner.ts`). The window then runs as an extension development
+				// host, where a development copy shadows an installed extension of the same id
+				extensions: this._environmentService.args['extensionDevelopmentPath']?.map(path => URI.from({ scheme: Schemas.vscodeRemote, authority: remoteAuthority, path: URI.file(resolve(path)).path })),
 			},
 			settingsSyncOptions: !this._environmentService.isBuilt && this._environmentService.args['enable-sync'] ? { enabled: true } : undefined,
 			enableWorkspaceTrust: !this._environmentService.args['disable-workspace-trust'],
