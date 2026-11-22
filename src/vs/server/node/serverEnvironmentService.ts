@@ -53,6 +53,8 @@ export const serverOptions: OptionDescriptions<Required<ServerParsedArgs>> = {
 
 	'user-data-dir': OPTIONS['user-data-dir'],
 	'enable-smoke-test-driver': OPTIONS['enable-smoke-test-driver'],
+	// Volter: the folders of extensions under development, which the web client server hands the workbench (`webClientServer.ts`)
+	'extensionDevelopmentPath': OPTIONS['extensionDevelopmentPath'],
 	'disable-telemetry': OPTIONS['disable-telemetry'],
 	'disable-experiments': OPTIONS['disable-experiments'],
 	'disable-workspace-trust': OPTIONS['disable-workspace-trust'],
@@ -185,6 +187,7 @@ export interface ServerParsedArgs {
 	'user-data-dir'?: string;
 
 	'enable-smoke-test-driver'?: boolean;
+	'extensionDevelopmentPath'?: string[];
 
 	'disable-telemetry'?: boolean;
 	'disable-experiments'?: boolean;
