@@ -143,25 +143,24 @@ export function createNlsUrl(nlsBaseUrl: string, commit: string | undefined, ver
 
 /**
  * Volter: pages a project runs on this machine (a dev server on its own port, framed by its plugin), the processes it
- * talks to (a room server's plain http), and the images they serve (a map tile server's): loopback http, any port, and
- * nothing beyond this machine.
+ * talks to (a room server's plain http), and the images they serve (a map tile server's): loopback http (a session's
+ * `editor-<id>.localhost` among it), any port, and nothing beyond this machine.
  */
-const LOOPBACK_FRAMES = 'http://*.localhost:* http://localhost:* http://127.0.0.1:*';
-const LOOPBACK_CONNECTIONS = 'http://127.0.0.1:* http://localhost:*';
+const LOOPBACK = 'http://*.localhost:* http://localhost:* http://127.0.0.1:*';
 
 export function createWorkbenchContentSecurityPolicy(scriptNonce: string, nlsBaseUrl: string | undefined, remoteAuthority: string, useTestResolver: boolean): string {
 	return [
 		'default-src \'self\';',
-		`img-src 'self' https: data: blob: ${LOOPBACK_CONNECTIONS};`,
+		`img-src 'self' https: data: blob: ${LOOPBACK};`,
 		'media-src \'self\' blob:;',
 		`script-src 'self' 'unsafe-eval' ${nlsBaseUrl ?? ''} blob: 'nonce-${scriptNonce}' '${webWorkerExtensionHostIframeScriptSHA}' 'sha256-/r7rqQ+yrxt57sxLuQ6AMYcy/lUpvAIzHjIJt/OeLWU=' ${useTestResolver ? '' : `http://${remoteAuthority}`};`,  // the sha is the same as in src/vs/workbench/services/extensions/worker/webWorkerExtensionHostIframe.html
 		'child-src \'self\';',
 		// the webviews' origin (`webviewEndpoint`)
-		`frame-src 'self' ${useTestResolver ? 'https://*.vscode-cdn.net' : `http://*.${remoteAuthority}`} data: ${LOOPBACK_FRAMES};`,
+		`frame-src 'self' ${useTestResolver ? 'https://*.vscode-cdn.net' : `http://*.${remoteAuthority}`} data: ${LOOPBACK};`,
 		'worker-src \'self\' data: blob:;',
 		'style-src \'self\' \'unsafe-inline\';',
 		// `blob:` and `data:`: a glTF's textures and embedded buffers, read from bytes already in the page
-		`connect-src 'self' ws: wss: https: blob: data: ${LOOPBACK_CONNECTIONS};`,
+		`connect-src 'self' ws: wss: https: blob: data: ${LOOPBACK};`,
 		'font-src \'self\' blob:;',
 		'manifest-src \'self\';'
 	].join(' ');
