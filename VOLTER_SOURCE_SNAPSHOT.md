@@ -215,8 +215,8 @@ rebase onto a newer Code-OSS can redo them as a checklist:
     `product.json`); both pages (`workbench.html`, `workbench-dev.html`)
     carry the map in `vscode-workbench-import-map` and add it as their one import map before any module loads, and say
     the product's `color-scheme` before styles load;
-  - the CSP admits loopback pages a project runs (`frame-src`), loopback http, `blob:` and `data:` (`connect-src`),
-    the images loopback http serves (`img-src`, a map tile server's), and `blob:` media (`media-src`).
+  - the CSP admits loopback http, `*.localhost` included, as frames, connections and images (`frame-src`,
+    `connect-src`, `img-src`: one list), `blob:` and `data:` connections, and `blob:` media (`media-src`).
 - **A sources page runs its server's product.** Out of sources the server passes its whole product as the page's
   `productConfiguration` (`webClientServer.ts`); `workbench-dev.html` sets it as `_VSCODE_PRODUCT_JSON`, which
   `product.ts`'s web fallback assigns over its defaults, in the page and the workers it is handed to.
